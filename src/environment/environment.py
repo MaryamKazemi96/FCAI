@@ -543,16 +543,18 @@ class MultiTaskAllocationEnv(gym.Env):
         self.list_ego_graphs, _, self.trueid_idx_mapping = get_edge_idx_graph(
             self.attributes_matrix, self.n_tasks, self.n_robots, self.radius, self.use_true_id
         )
-        assigned_task_ids = [
-        t.id for t in self.tasks if t.is_assigned
+        # Filter out both assigned tasks AND tasks not yet available (release_time)
+        tasks_to_remove_ids = [
+            t.id for t in self.tasks 
+            if t.is_assigned or not t.is_available(self.time_count)
         ]
         id_to_index = {
-        task_id: idx 
-        for idx, task_id in enumerate(self.taskid_to_task.keys())
-    }   
+            task_id: idx 
+            for idx, task_id in enumerate(self.taskid_to_task.keys())
+        }   
         # print(id_to_index, 'id to index in update graph')
-        # print(assigned_task_ids, 'assigned task ids in update graph')
-        mapped_indices = [id_to_index[t_id] for t_id in assigned_task_ids]
+        # print(tasks_to_remove_ids, 'tasks to remove (assigned or not yet available)')
+        mapped_indices = [id_to_index[t_id] for t_id in tasks_to_remove_ids if t_id in id_to_index]
         # print(mapped_indices, 'mapped indices in update graph')
         # print(len(self.robots_id), 'len robots id in update graph')
         id_to_remove = [i + len(self.robots_id) for i in mapped_indices]
@@ -560,12 +562,12 @@ class MultiTaskAllocationEnv(gym.Env):
         # print(self.taskid_to_task)
         
         
-        # print(self.list_ego_graphs, 'ego graphs before deleting assigned tasks')
+        # print(self.list_ego_graphs, 'ego graphs before deleting assigned/unavailable tasks')
 
         from utils.graph_utils import delete_taskid_in_graph
         delete_taskid_in_graph(self.list_ego_graphs, id_to_remove)
-        # print(self.list_ego_graphs, 'ego graphs after deleting assigned tasks')
-        # print(self.list_ego_graphs, 'ego graphs after deleting assigned tasks')
+        # print(self.list_ego_graphs, 'ego graphs after deleting assigned/unavailable tasks')
+        # print(self.list_ego_graphs, 'ego graphs after deleting assigned/unavailable tasks')
 
         return self.list_ego_graphs
     
