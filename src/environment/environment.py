@@ -275,6 +275,9 @@ class Tasks_variable:
         else:
             return 1
 
+    def is_released(self, current_time=0):
+        """Check if the task has been released based on its release time."""
+        return current_time >= self.release_time
 
     def is_obsolete(self, current_time=0):
         if (not self.is_pickedup) and (current_time > self.ddl_pick*10):
@@ -342,21 +345,41 @@ class Tasks_variable:
         ]
         return att
 class MultiTaskAllocationEnv(gym.Env):
-    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=2000, feature_size=9, use_true_id=False):
+    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=2000, feature_size=9, use_true_id=False, all_batches=False):
         super(MultiTaskAllocationEnv, self).__init__()
         self.planner = Planner()
-        self.tasks_batches = task_cont_coord_array
         self.robot_capacity = 5
         self.radius = radius
         self.feature_size = feature_size
         self.agents_cont_coord_array = agents_cont_coord_array
         self.n_robots = len(self.agents_cont_coord_array)
-        self.n_tasks = len(task_cont_coord_array)
-        self.task_cont_coord_array = task_cont_coord_array
-        self.time_count = 0
-        self.batch_time = 180
         self.use_true_id = use_true_id
         self.current_traj = {i: [] for i in range(self.n_robots)}
+        
+        # Handle all_batches mode: flatten list of batches into single task array
+        if all_batches and isinstance(task_cont_coord_array, list):
+            # task_cont_coord_array is a list of batches, flatten them
+            self.task_cont_coord_array = []
+            for batch in task_cont_coord_array:
+                self.task_cont_coord_array.extend(batch)
+            self.task_cont_coord_array = np.array(self.task_cont_coord_array)
+            
+            # Calculate max steps based on number of batches and their release times
+            # Assuming last batch has highest release time
+            if len(self.task_cont_coord_array) > 0:
+                max_release_time = max(task[7] for task in self.task_cont_coord_array)  # t_release is at index 7
+                # Set batch_time to max_release_time + buffer for completing last batch
+                self.batch_time = int(max_release_time + 180)
+            else:
+                self.batch_time = 180
+        else:
+            # Single batch mode (original behavior)
+            self.task_cont_coord_array = task_cont_coord_array
+            self.batch_time = 180
+            
+        self.tasks_batches = task_cont_coord_array
+        self.n_tasks = len(self.task_cont_coord_array)
+        self.time_count = 0
         self.observation_space = spaces.Box(0, self.n_robots, shape=(feature_size,), dtype=int)
         self.action_space = spaces.Discrete(self.n_robots)
         self.reset()
@@ -582,7 +605,7 @@ class MultiTaskAllocationEnv(gym.Env):
         # print([self.taskid_to_task[t_id].is_assigned for t_id in self.taskid_to_task], 'task assigned status in get available task ids')
         return [
             tid for tid, t in self.taskid_to_task.items()
-            if t.is_active and not t.is_assigned
+            if t.is_active and not t.is_assigned and t.is_released(self.time_count)
         ]
 
     def _plan_robot_trajectory(self, robot):
