@@ -274,6 +274,13 @@ class Tasks_variable:
             return 0
         else:
             return 1
+    
+    def is_available(self, current_time=0):
+        """Check if task is available based on release_time and current state."""
+        if self.is_pickedup:
+            return False
+        # Task is available if current time has reached its release time
+        return current_time >= self.release_time
 
 
     def is_obsolete(self, current_time=0):
@@ -389,6 +396,40 @@ class MultiTaskAllocationEnv(gym.Env):
         # reset time counter so deadlines / time-dependent behavior start fresh
         self.time_count = 0
 
+    def set_multi_batch(self, task_batches_with_release_times):
+        """
+        Set multiple task batches with their release times for concurrent training.
+        
+        Args:
+            task_batches_with_release_times: List of tuples [(batch_tasks, release_time), ...]
+                where batch_tasks is an array of task_info rows and release_time is when 
+                tasks in that batch become available.
+        """
+        # Combine all batches into a single task array
+        # For each batch, modify the t_release field to be the batch's release_time
+        all_tasks = []
+        for batch_tasks, batch_release_time in task_batches_with_release_times:
+            for task_info in batch_tasks:
+                # task_info structure: [task_id, w_origin, h_origin, yaw_origin,
+                #                       w_destination, h_destination, yaw_destination,
+                #                       t_release, pickupddl, estimatedTravelTime, dropoff_deadline]
+                # Replace t_release (index 7) with batch_release_time
+                modified_task_info = task_info.copy()
+                modified_task_info[7] = batch_release_time
+                all_tasks.append(modified_task_info)
+        
+        # Set the combined tasks as the environment's task array
+        if len(all_tasks) > 0:
+            self.task_cont_coord_array = np.array(all_tasks)
+        else:
+            self.task_cont_coord_array = np.zeros((0, 11))
+        
+        # Rebuild tasks and reset state
+        self.reset_tasks()
+        self.reset_robot()
+        self._init_attribute_matrix()
+        self.time_count = 0
+    
     def reset(self):
         self.time_count = 0
         self.assign_traj = []
@@ -582,7 +623,7 @@ class MultiTaskAllocationEnv(gym.Env):
         # print([self.taskid_to_task[t_id].is_assigned for t_id in self.taskid_to_task], 'task assigned status in get available task ids')
         return [
             tid for tid, t in self.taskid_to_task.items()
-            if t.is_active and not t.is_assigned
+            if t.is_available(self.time_count) and not t.is_assigned
         ]
 
     def _plan_robot_trajectory(self, robot):
@@ -774,9 +815,9 @@ class MultiTaskAllocationEnv(gym.Env):
                 # print(f"_get_final_assigment: could not map task identifier {task_identifier} to a task object")
                 continue
 
-            # Skip if not active or already assigned
-            if not task.is_active or task.is_assigned:
-                # print(f"Task {task.id} not active or already assigned; skipping")
+            # Skip if not available (release_time) or already assigned
+            if not task.is_available(self.time_count) or task.is_assigned:
+                # print(f"Task {task.id} not available or already assigned; skipping")
                 continue
 
             # Attempt to add the task to the robot (this respects robot.maxCapacity)
@@ -813,7 +854,7 @@ class MultiTaskAllocationEnv(gym.Env):
             if task_idx < 0 or task_idx >= len(self.tasks):
                 continue
             task = self.tasks[task_idx]
-            if not task.is_active:
+            if not task.is_available(self.time_count):
                 continue
 
             # Add task to robot's goal list

@@ -653,7 +653,29 @@ def _build_edge_index_from_ego_list(ego_list):
 
 def train(env, num_episodes, actors, critic,
           optimizers_actors, optimizer_critic, gamma=0.99,
-          max_steps_per_episode=200, device=None, verbose=True):
+          max_steps_per_episode=2000, device=None, verbose=True,
+          task_batches_with_release_times=None):
+    """
+    Train actor-critic models on the given environment.
+    
+    Args:
+        env: MultiTaskAllocationEnv instance
+        num_episodes: Number of training episodes
+        actors: Dict of actor models (one per robot)
+        critic: Critic model
+        optimizers_actors: Dict of optimizers for actors
+        optimizer_critic: Optimizer for critic
+        gamma: Discount factor
+        max_steps_per_episode: Maximum steps per episode (default 2000 for 10 batches)
+        device: torch device (cuda/cpu)
+        verbose: Whether to print episode progress
+        task_batches_with_release_times: Optional list of (batch_tasks, release_time) tuples
+                                        for concurrent multi-batch training. If None, uses
+                                        env's current task configuration (backward compatible).
+    
+    Returns:
+        List of episode rewards
+    """
 
     episode_rewards = []
 
@@ -667,6 +689,10 @@ def train(env, num_episodes, actors, critic,
     entropy_coef = 0.01  # example; adjust as needed
 
     for episode in range(num_episodes):
+        # If multi-batch training is enabled, set up batches with release times
+        if task_batches_with_release_times is not None:
+            env.set_multi_batch(task_batches_with_release_times)
+        
         obs, _ = env.reset()
         ego_graphs, attribute_matrix = obs
 
