@@ -187,11 +187,24 @@ class DataGenerator:
                     break
         return np.array(agents)
 
-    def generate_tasks(self, n_batches, n_points):
+    def generate_tasks(self, n_batches, n_points, release_time_interval=30):
+        """
+        Generate tasks for multiple batches with release times.
+        
+        Args:
+            n_batches: Number of batches to generate
+            n_points: Number of tasks per batch
+            release_time_interval: Time interval between batch releases (default: 30)
+            
+        Returns:
+            List of task batches, where each batch has tasks with batch-specific release times
+        """
         all_batches = []  # Store all batches of tasks
         for i in range(n_batches):
             tasks = []
             task_num = 0  # Initialize task number for the batch
+            batch_release_time = i * release_time_interval  # Calculate release time for this batch
+            
             while len(tasks) < n_points:
                 # origin
                 while True:
@@ -207,7 +220,7 @@ class DataGenerator:
                         break
                 yaw_origin = random.random() * 2 * math.pi - math.pi
                 yaw_destination = random.random() * 2 * math.pi - math.pi
-                t_release = 0  # currently always 0
+                t_release = batch_release_time  # Use batch-specific release time
 
                 # Calculate estimated travel time using Planner (A*)
                 start = (h_origin, w_origin)
@@ -229,7 +242,18 @@ class DataGenerator:
                 # IMPORTANT: the Tasks_variable expects the order:
                 # [task_id, w_origin, h_origin, yaw_origin,
                 #  w_destination, h_destination, yaw_destination,
-                #  t_release, pickupddl, estimatedTravelTime, dropoff_deadline]
+                #  t_release, pickup_deadline, estimated_travel_time, dropoff_deadline]
+                # 
+                # Fields explanation:
+                # - task_id: Unique identifier for the task
+                # - w_origin, h_origin: Origin coordinates (width, height)
+                # - yaw_origin: Initial orientation at origin
+                # - w_destination, h_destination: Destination coordinates
+                # - yaw_destination: Target orientation at destination
+                # - t_release: Release time (batch-specific: batch_idx * release_time_interval)
+                # - pickup_deadline: Latest time to pickup task (t_release + max_waiting_time)
+                # - estimated_travel_time: A* path length estimate
+                # - dropoff_deadline: Latest time to complete task delivery
                 tasks.append([
                     unique_id,
                     w_origin, h_origin, yaw_origin,
@@ -246,6 +270,24 @@ class DataGenerator:
         return all_batches
     
 if __name__ == "__main__":
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Generate batch data with release times for multi-robot task allocation"
+    )
+    parser.add_argument("--n-batches", type=int, default=10,
+                        help="Number of batches to generate (default: 10)")
+    parser.add_argument("--n-tasks", type=int, default=10,
+                        help="Number of tasks per batch (default: 10)")
+    parser.add_argument("--n-robots", type=int, default=5,
+                        help="Number of robots/agents (default: 5)")
+    parser.add_argument("--release-interval", type=int, default=50,
+                        help="Time interval between batch releases (default: 30)")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory for data files (default: data/)")
+    args = parser.parse_args()
+    
     # Load configuration from ATC_wed.yaml
     config_path = Path(__file__).resolve().parent.parent.parent / "env" / "ATC_wed.yaml"
     with open(config_path, 'r') as file:
@@ -256,8 +298,8 @@ if __name__ == "__main__":
     y_min, y_max = params['y_min'], params['y_max']
     map_resolution = params['map_resolution']
     Planning_resolution = params['Planning_resolution']
-    max_waiting_time = 10
-    max_travel_delay_percentage = 10 / 100
+    max_waiting_time = 30
+    max_travel_delay_percentage = 2
 
     # Initialize planner (expects Planner to load map from env/ATC_wed.yaml)
     planner = Planner()
@@ -267,14 +309,22 @@ if __name__ == "__main__":
                               max_travel_delay_percentage, Planning_resolution, 
                               planner, origin_x=-60, origin_y=20)
 
-    # Generate tasks
-    n_batches = 10
-    n_tasks = 10
-    n_robots = 5
-    agents = generator.generate_agents(n_robots)
-    tasks = generator.generate_tasks(n_batches, n_tasks)
+    # Generate tasks with batch release times
+    # Batch 0: release_time = 0, Batch 1: release_time = 30, Batch 2: release_time = 60, etc.
+    print(f"Generating data:")
+    print(f"  - {args.n_batches} batches")
+    print(f"  - {args.n_tasks} tasks per batch")
+    print(f"  - {args.n_robots} robots")
+    print(f"  - Release time interval: {args.release_interval}")
+    
+    agents = generator.generate_agents(args.n_robots)
+    tasks = generator.generate_tasks(args.n_batches, args.n_tasks, args.release_interval)
 
-    output_dir = Path(__file__).resolve().parent.parent.parent / "data"
+    # Determine output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path(__file__).resolve().parent.parent.parent / "data"
     output_dir.mkdir(exist_ok=True)
 
     # Save agents
@@ -286,4 +336,4 @@ if __name__ == "__main__":
     for i, batch in enumerate(tasks):
         tasks_file = output_dir / f"tasks_batch_{i}.npy"
         np.save(tasks_file, batch)
-        print(f"Tasks for batch {i} saved to {tasks_file}")
+        print(f"Tasks for batch {i} (release_time={i * args.release_interval}) saved to {tasks_file}")
