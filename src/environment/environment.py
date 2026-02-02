@@ -346,7 +346,7 @@ class MultiTaskAllocationEnv(gym.Env):
         super(MultiTaskAllocationEnv, self).__init__()
         self.planner = Planner()
         self.tasks_batches = task_cont_coord_array
-        self.robot_capacity = 5
+        self.robot_capacity = 3  # Fixed: Changed from 5 to 3 to enforce correct capacity constraint
         self.radius = radius
         self.feature_size = feature_size
         self.agents_cont_coord_array = agents_cont_coord_array
@@ -580,10 +580,15 @@ class MultiTaskAllocationEnv(gym.Env):
     
     def get_available_task_ids(self):
         # print([self.taskid_to_task[t_id].is_assigned for t_id in self.taskid_to_task], 'task assigned status in get available task ids')
-        return [
+        # Filter tasks by release time - only include tasks that have been released
+        available_tasks = [
             tid for tid, t in self.taskid_to_task.items()
-            if t.is_active and not t.is_assigned
+            if t.is_active and not t.is_assigned and t.release_time <= self.time_count
         ]
+        # Debug log for task availability based on release times
+        # print(f"[DEBUG] Step {self.time_count}: Available tasks after release time filter: {available_tasks}")
+        # print(f"[DEBUG] Task release times: {[(tid, t.release_time) for tid, t in self.taskid_to_task.items() if t.is_active and not t.is_assigned]}")
+        return available_tasks
 
     def _plan_robot_trajectory(self, robot):
         """
@@ -753,6 +758,11 @@ class MultiTaskAllocationEnv(gym.Env):
           - Reorder robot.goal_list by distance and set robot.needs_replan = True
             (actual planning happens in step(), centrally).
         """
+        # Debug log: Track robot states before assignment
+        # print(f"[DEBUG] Step {self.time_count}: Robot capacity before assignment:")
+        # for r in self.robots:
+        #     print(f"  Robot {r.robot_id}: capacity={r.capacity}/{r.maxCapacity}, tasks={r.current_tasks_id}")
+        
         # Process in deterministic order
         for rid in sorted(assignments.keys()):
             # validate robot id
@@ -765,7 +775,8 @@ class MultiTaskAllocationEnv(gym.Env):
 
             # skip if robot is full
             if robot.capacity >= robot.maxCapacity:
-                # print(f"Robot {rid} at capacity {robot.capacity}/{robot.maxCapacity}, skipping assignment {task_identifier}")
+                # Debug log when robot is at capacity
+                # print(f"[DEBUG] Robot {rid} at capacity {robot.capacity}/{robot.maxCapacity}, skipping assignment {task_identifier}")
                 continue
 
             # Map identifier to task object (handles both unique task ids and graph node indices)
@@ -790,6 +801,9 @@ class MultiTaskAllocationEnv(gym.Env):
             task.assigned_to = rid 
             # mark the task assigned only after successful add_task
             task.is_assigned = True
+            
+            # Debug log successful assignment
+            # print(f"[DEBUG] Robot {rid} assigned task {task.id}, new capacity: {robot.capacity}/{robot.maxCapacity}")
 
             # Reorder goals so the robot will next go to the closest goal (could be another pickup)
             robot.reorder_goals_by_distance()
