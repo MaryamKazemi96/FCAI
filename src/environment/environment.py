@@ -715,7 +715,7 @@ class MultiTaskAllocationEnv(gym.Env):
 
                     list_t2r_assignments[rid] = top2
 
-            print("Assignments before conflict resolution:", list_t2r_assignments)
+            # print("Assignments before conflict resolution:", list_t2r_assignments)
             # print(f"\n=== Step {self.time_count} Assignment proposals (per robot) ===")
             # for rid in sorted(list_t2r_assignments.keys()):
             #     print(f"  R{rid}: {list_t2r_assignments[rid]}")
@@ -726,7 +726,7 @@ class MultiTaskAllocationEnv(gym.Env):
 
             # Resolve conflicts using top-2 list ---
             resolved_assignments = self.resolve_conflicts(list_t2r_assignments)
-            print("Assignments after conflict resolution:", resolved_assignments)
+            # print("Assignments after conflict resolution:", resolved_assignments)
             self._get_final_assigment(resolved_assignments)
             # after assignment application (one-shot or iterative)
             final_assignments_for_step = resolved_assignments.copy() if 'resolved_assignments' in locals() else {}
