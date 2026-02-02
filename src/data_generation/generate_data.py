@@ -153,13 +153,29 @@ This script generates batch data with release times for multi-robot task allocat
 Key features:
 - Generates agents (robots) with random valid positions
 - Generates task batches with batch-specific release times
-- Release times: Batch 0 = 0, Batch 1 = 30, Batch 2 = 60, etc.
+- Release times: Batch 0 = 0, Batch 1 = 30, Batch 2 = 60, etc. (configurable interval)
 - Each task includes: ID, origin, destination, yaw angles, release time, deadlines
 - Uses A* pathfinding to calculate estimated travel times
 - Saves data as NumPy arrays for training
 
 Usage:
+    # Basic usage with default parameters (10 batches, 10 tasks/batch, 5 robots, 30s interval)
     python src/data_generation/generate_data.py
+    
+    # Custom parameters
+    python src/data_generation/generate_data.py --n-batches 5 --n-tasks 20 --release-interval 60
+    
+    # Custom output directory
+    python src/data_generation/generate_data.py --output-dir my_data/
+    
+    # See all options
+    python src/data_generation/generate_data.py --help
+
+Output:
+    - agents.npy: Array of robot initial states (id, x, y, yaw)
+    - tasks_batch_N.npy: Arrays of task data for each batch N
+      Each task: [id, x_origin, y_origin, yaw_origin, x_dest, y_dest, yaw_dest,
+                  release_time, pickup_deadline, estimated_travel_time, dropoff_deadline]
 """
 
 import random
@@ -287,6 +303,24 @@ class DataGenerator:
         return all_batches
     
 if __name__ == "__main__":
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Generate batch data with release times for multi-robot task allocation"
+    )
+    parser.add_argument("--n-batches", type=int, default=10,
+                        help="Number of batches to generate (default: 10)")
+    parser.add_argument("--n-tasks", type=int, default=10,
+                        help="Number of tasks per batch (default: 10)")
+    parser.add_argument("--n-robots", type=int, default=5,
+                        help="Number of robots/agents (default: 5)")
+    parser.add_argument("--release-interval", type=int, default=30,
+                        help="Time interval between batch releases (default: 30)")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory for data files (default: data/)")
+    args = parser.parse_args()
+    
     # Load configuration from ATC_wed.yaml
     config_path = Path(__file__).resolve().parent.parent.parent / "env" / "ATC_wed.yaml"
     with open(config_path, 'r') as file:
@@ -310,15 +344,20 @@ if __name__ == "__main__":
 
     # Generate tasks with batch release times
     # Batch 0: release_time = 0, Batch 1: release_time = 30, Batch 2: release_time = 60, etc.
-    n_batches = 10
-    n_tasks = 10
-    n_robots = 5
-    release_time_interval = 30  # Time interval between batch releases
+    print(f"Generating data:")
+    print(f"  - {args.n_batches} batches")
+    print(f"  - {args.n_tasks} tasks per batch")
+    print(f"  - {args.n_robots} robots")
+    print(f"  - Release time interval: {args.release_interval}")
     
-    agents = generator.generate_agents(n_robots)
-    tasks = generator.generate_tasks(n_batches, n_tasks, release_time_interval)
+    agents = generator.generate_agents(args.n_robots)
+    tasks = generator.generate_tasks(args.n_batches, args.n_tasks, args.release_interval)
 
-    output_dir = Path(__file__).resolve().parent.parent.parent / "data"
+    # Determine output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path(__file__).resolve().parent.parent.parent / "data"
     output_dir.mkdir(exist_ok=True)
 
     # Save agents
@@ -330,4 +369,4 @@ if __name__ == "__main__":
     for i, batch in enumerate(tasks):
         tasks_file = output_dir / f"tasks_batch_{i}.npy"
         np.save(tasks_file, batch)
-        print(f"Tasks for batch {i} saved to {tasks_file}")
+        print(f"Tasks for batch {i} (release_time={i * args.release_interval}) saved to {tasks_file}")
