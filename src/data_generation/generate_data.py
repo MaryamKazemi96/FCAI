@@ -1,3 +1,34 @@
+"""
+Data Generation Script for Multi-Robot Task Allocation
+
+This script generates batch data with release times for multi-robot task allocation.
+Key features:
+- Generates agents (robots) with random valid positions
+- Generates task batches with batch-specific release times
+- Release times: Batch 0 = 0, Batch 1 = 30, Batch 2 = 60, etc. (configurable interval)
+- Each task includes: ID, origin, destination, yaw angles, release time, deadlines
+- Uses A* pathfinding to calculate estimated travel times
+- Saves data as NumPy arrays for training
+
+Usage:
+    # Basic usage with default parameters (10 batches, 10 tasks/batch, 5 robots, 30s interval)
+    python src/data_generation/generate_data.py
+    
+    # Custom parameters
+    python src/data_generation/generate_data.py --n-batches 5 --n-tasks 20 --release-interval 60
+    
+    # Custom output directory
+    python src/data_generation/generate_data.py --output-dir my_data/
+    
+    # See all options
+    python src/data_generation/generate_data.py --help
+
+Output:
+    - agents.npy: Array of robot initial states (id, x, y, yaw)
+    - tasks_batch_N.npy: Arrays of task data for each batch N
+      Each task: [id, x_origin, y_origin, yaw_origin, x_dest, y_dest, yaw_dest,
+                  release_time, pickup_deadline, estimated_travel_time, dropoff_deadline]
+"""
 
 # import random
 # import math
@@ -144,39 +175,6 @@
 #         np.save(tasks_file, batch)
 #         print(f"Tasks for batch {i} saved to {tasks_file}")
 
-
-
-"""
-Data Generation Script for Multi-Robot Task Allocation
-
-This script generates batch data with release times for multi-robot task allocation.
-Key features:
-- Generates agents (robots) with random valid positions
-- Generates task batches with batch-specific release times
-- Release times: Batch 0 = 0, Batch 1 = 30, Batch 2 = 60, etc. (configurable interval)
-- Each task includes: ID, origin, destination, yaw angles, release time, deadlines
-- Uses A* pathfinding to calculate estimated travel times
-- Saves data as NumPy arrays for training
-
-Usage:
-    # Basic usage with default parameters (10 batches, 10 tasks/batch, 5 robots, 30s interval)
-    python src/data_generation/generate_data.py
-    
-    # Custom parameters
-    python src/data_generation/generate_data.py --n-batches 5 --n-tasks 20 --release-interval 60
-    
-    # Custom output directory
-    python src/data_generation/generate_data.py --output-dir my_data/
-    
-    # See all options
-    python src/data_generation/generate_data.py --help
-
-Output:
-    - agents.npy: Array of robot initial states (id, x, y, yaw)
-    - tasks_batch_N.npy: Arrays of task data for each batch N
-      Each task: [id, x_origin, y_origin, yaw_origin, x_dest, y_dest, yaw_dest,
-                  release_time, pickup_deadline, estimated_travel_time, dropoff_deadline]
-"""
 
 import random
 import math

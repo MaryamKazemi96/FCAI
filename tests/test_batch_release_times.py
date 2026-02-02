@@ -11,18 +11,20 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.data_generation.generate_data import DataGenerator
 
 
+class MockPlanner:
+    """Mock planner for testing data generation without actual pathfinding."""
+    
+    def is_point_valid(self, point):
+        """Always return True for simplicity in tests."""
+        return True
+    
+    def get_plan(self, start, goal):
+        """Return a simple path for testing."""
+        return True, [(0, 0), (1, 1), (2, 2)]  # path with 3 steps
+
+
 def test_batch_release_times():
     """Test that batches have correct release times based on batch index and interval."""
-    # Create a simple mock planner for testing
-    class MockPlanner:
-        def is_point_valid(self, point):
-            # Always return True for simplicity
-            return True
-        
-        def get_plan(self, start, goal):
-            # Return a simple path for testing
-            return True, [(0, 0), (1, 1), (2, 2)]  # path with 3 steps
-    
     # Initialize the data generator with mock planner
     generator = DataGenerator(
         x_min=-60, x_max=80, y_min=-40, y_max=20,
