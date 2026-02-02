@@ -14,7 +14,7 @@ import json
 import random
 import time
 
-from src.environment.environment import MultiTaskAllocationEnv
+from src.environment.environment import MultiTaskAllocationEnv, TASK_RELEASE_TIME_INDEX
 from src.models.actor_critic import ActorGNN, CriticGNN
 from src.training.train_actor_critic import train
 
@@ -54,7 +54,7 @@ def load_all_batches(data_dir: Path, n_batches: int):
         if batch_file.exists():
             batch = np.load(batch_file, allow_pickle=True)
             batches.append(batch)
-            print(f"Loaded batch {i}: {len(batch)} tasks, release_time={batch[0][7] if len(batch) > 0 else 'N/A'}")
+            print(f"Loaded batch {i}: {len(batch)} tasks, release_time={batch[0][TASK_RELEASE_TIME_INDEX] if len(batch) > 0 else 'N/A'}")
         else:
             print(f"Warning: {batch_file} not found")
     return batches

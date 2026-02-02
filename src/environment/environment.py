@@ -12,6 +12,10 @@ from utils.graph_utils import get_edge_idx_graph, update_shared_attribute_matrix
 from utils import utils as ut
 from PIL import Image
 
+# Constants for task data structure
+TASK_RELEASE_TIME_INDEX = 7  # Index of release time in task info array
+DEFAULT_BATCH_TIME = 180  # Default time buffer for completing a batch
+
 
 class Planner:
     def __init__(self):
@@ -367,15 +371,15 @@ class MultiTaskAllocationEnv(gym.Env):
             # Calculate max steps based on number of batches and their release times
             # Assuming last batch has highest release time
             if len(self.task_cont_coord_array) > 0:
-                max_release_time = max(task[7] for task in self.task_cont_coord_array)  # t_release is at index 7
+                max_release_time = max(task[TASK_RELEASE_TIME_INDEX] for task in self.task_cont_coord_array)
                 # Set batch_time to max_release_time + buffer for completing last batch
-                self.batch_time = int(max_release_time + 180)
+                self.batch_time = int(max_release_time + DEFAULT_BATCH_TIME)
             else:
-                self.batch_time = 180
+                self.batch_time = DEFAULT_BATCH_TIME
         else:
             # Single batch mode (original behavior)
             self.task_cont_coord_array = task_cont_coord_array
-            self.batch_time = 180
+            self.batch_time = DEFAULT_BATCH_TIME
             
         self.tasks_batches = task_cont_coord_array
         self.n_tasks = len(self.task_cont_coord_array)
