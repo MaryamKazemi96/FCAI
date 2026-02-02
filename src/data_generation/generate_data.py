@@ -145,6 +145,23 @@
 #         print(f"Tasks for batch {i} saved to {tasks_file}")
 
 
+
+"""
+Data Generation Script for Multi-Robot Task Allocation
+
+This script generates batch data with release times for multi-robot task allocation.
+Key features:
+- Generates agents (robots) with random valid positions
+- Generates task batches with batch-specific release times
+- Release times: Batch 0 = 0, Batch 1 = 30, Batch 2 = 60, etc.
+- Each task includes: ID, origin, destination, yaw angles, release time, deadlines
+- Uses A* pathfinding to calculate estimated travel times
+- Saves data as NumPy arrays for training
+
+Usage:
+    python src/data_generation/generate_data.py
+"""
+
 import random
 import math
 import sys
@@ -187,11 +204,24 @@ class DataGenerator:
                     break
         return np.array(agents)
 
-    def generate_tasks(self, n_batches, n_points):
+    def generate_tasks(self, n_batches, n_points, release_time_interval=30):
+        """
+        Generate tasks for multiple batches with release times.
+        
+        Args:
+            n_batches: Number of batches to generate
+            n_points: Number of tasks per batch
+            release_time_interval: Time interval between batch releases (default: 30)
+            
+        Returns:
+            List of task batches, where each batch has tasks with batch-specific release times
+        """
         all_batches = []  # Store all batches of tasks
         for i in range(n_batches):
             tasks = []
             task_num = 0  # Initialize task number for the batch
+            batch_release_time = i * release_time_interval  # Calculate release time for this batch
+            
             while len(tasks) < n_points:
                 # origin
                 while True:
@@ -207,7 +237,7 @@ class DataGenerator:
                         break
                 yaw_origin = random.random() * 2 * math.pi - math.pi
                 yaw_destination = random.random() * 2 * math.pi - math.pi
-                t_release = 0  # currently always 0
+                t_release = batch_release_time  # Use batch-specific release time
 
                 # Calculate estimated travel time using Planner (A*)
                 start = (h_origin, w_origin)
@@ -229,7 +259,18 @@ class DataGenerator:
                 # IMPORTANT: the Tasks_variable expects the order:
                 # [task_id, w_origin, h_origin, yaw_origin,
                 #  w_destination, h_destination, yaw_destination,
-                #  t_release, pickupddl, estimatedTravelTime, dropoff_deadline]
+                #  t_release, pickup_deadline, estimated_travel_time, dropoff_deadline]
+                # 
+                # Fields explanation:
+                # - task_id: Unique identifier for the task
+                # - w_origin, h_origin: Origin coordinates (width, height)
+                # - yaw_origin: Initial orientation at origin
+                # - w_destination, h_destination: Destination coordinates
+                # - yaw_destination: Target orientation at destination
+                # - t_release: Release time (batch-specific: batch_idx * release_time_interval)
+                # - pickup_deadline: Latest time to pickup task (t_release + max_waiting_time)
+                # - estimated_travel_time: A* path length estimate
+                # - dropoff_deadline: Latest time to complete task delivery
                 tasks.append([
                     unique_id,
                     w_origin, h_origin, yaw_origin,
@@ -267,12 +308,15 @@ if __name__ == "__main__":
                               max_travel_delay_percentage, Planning_resolution, 
                               planner, origin_x=-60, origin_y=20)
 
-    # Generate tasks
+    # Generate tasks with batch release times
+    # Batch 0: release_time = 0, Batch 1: release_time = 30, Batch 2: release_time = 60, etc.
     n_batches = 10
     n_tasks = 10
     n_robots = 5
+    release_time_interval = 30  # Time interval between batch releases
+    
     agents = generator.generate_agents(n_robots)
-    tasks = generator.generate_tasks(n_batches, n_tasks)
+    tasks = generator.generate_tasks(n_batches, n_tasks, release_time_interval)
 
     output_dir = Path(__file__).resolve().parent.parent.parent / "data"
     output_dir.mkdir(exist_ok=True)
