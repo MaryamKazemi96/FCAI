@@ -62,17 +62,32 @@ def test_backward_compatibility():
     agents = np.load(agents_file, allow_pickle=True)
     tasks = np.load(batch0_file, allow_pickle=True)
     
-    # Initialize environment normally
+    # Initialize environment normally (no multi-batch)
     env = MultiTaskAllocationEnv(agents, tasks)
     
     # Reset the environment
     obs, _ = env.reset()
     
-    # All tasks should be available at time 0 (default behavior)
-    available_at_0 = [t for t in env.tasks if t.is_available(0)]
-    print(f"Tasks available at time 0 (backward compat): {len(available_at_0)}")
+    # Verify all tasks are loaded
+    assert len(env.tasks) == len(tasks), "All tasks should be loaded"
     
-    # In backward compatible mode, all tasks are available at their original release times
+    # In backward compatible mode, tasks use their original release times from the data file
+    # Check that tasks have their original release times (not modified)
+    original_release_times = [int(task[7]) for task in tasks]  # t_release is at index 7
+    env_release_times = [t.release_time for t in env.tasks]
+    
+    # Release times should match the original data
+    for orig, env_time in zip(original_release_times, env_release_times):
+        assert env_time == orig, f"Release times should match original: {env_time} vs {orig}"
+    
+    # All tasks with release_time <= 0 should be available at time 0
+    available_at_0 = [t for t in env.tasks if t.is_available(0)]
+    expected_at_0 = [t for t in env.tasks if t.release_time <= 0]
+    assert len(available_at_0) == len(expected_at_0), \
+        f"Expected {len(expected_at_0)} tasks at time 0, got {len(available_at_0)}"
+    
+    print(f"Tasks available at time 0 (backward compat): {len(available_at_0)}/{len(env.tasks)}")
+    print(f"Release times preserved from original data: {original_release_times[:3]}...")
     print("\nBackward compatibility test passed!")
     
     env.close()

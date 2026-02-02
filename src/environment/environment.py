@@ -554,6 +554,7 @@ class MultiTaskAllocationEnv(gym.Env):
         }   
         # print(id_to_index, 'id to index in update graph')
         # print(tasks_to_remove_ids, 'tasks to remove (assigned or not yet available)')
+        # Safe filtering: Some task IDs might not be in mapping if tasks were removed/completed
         mapped_indices = [id_to_index[t_id] for t_id in tasks_to_remove_ids if t_id in id_to_index]
         # print(mapped_indices, 'mapped indices in update graph')
         # print(len(self.robots_id), 'len robots id in update graph')

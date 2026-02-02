@@ -653,7 +653,7 @@ def _build_edge_index_from_ego_list(ego_list):
 
 def train(env, num_episodes, actors, critic,
           optimizers_actors, optimizer_critic, gamma=0.99,
-          max_steps_per_episode=2000, device=None, verbose=True,
+          max_steps_per_episode=None, device=None, verbose=True,
           task_batches_with_release_times=None):
     """
     Train actor-critic models on the given environment.
@@ -666,7 +666,8 @@ def train(env, num_episodes, actors, critic,
         optimizers_actors: Dict of optimizers for actors
         optimizer_critic: Optimizer for critic
         gamma: Discount factor
-        max_steps_per_episode: Maximum steps per episode (default 2000 for 10 batches)
+        max_steps_per_episode: Maximum steps per episode. If None, defaults to 2000 for 
+                               multi-batch training or 200 for single-batch (backward compatible)
         device: torch device (cuda/cpu)
         verbose: Whether to print episode progress
         task_batches_with_release_times: Optional list of (batch_tasks, release_time) tuples
@@ -681,6 +682,13 @@ def train(env, num_episodes, actors, critic,
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Set default max_steps based on whether multi-batch is enabled (backward compatible)
+    if max_steps_per_episode is None:
+        if task_batches_with_release_times is not None:
+            max_steps_per_episode = 2000  # For multi-batch training (10 batches)
+        else:
+            max_steps_per_episode = 200   # Original default for single-batch
 
     for a in actors.values():
         a.to(device)
