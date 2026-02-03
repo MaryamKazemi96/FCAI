@@ -114,7 +114,22 @@ def delete_taskid_in_graphmain(list_ego_graphs, list_tid2remove):
         ]
         list_ego_graphs[rid] = ego_graph
 
+def remove_robot_edges(ego_graphs, full_capacity_robot_ids):
+    """
+    Remove all edges for robots that have reached their maximum capacity.
 
+    Args:
+        ego_graphs (dict): A dictionary where keys are robot IDs and values are lists of ego edges.
+        full_capacity_robot_ids (list): List of robot IDs that have reached their maximum capacity.
+    """
+    # Convert robot IDs to native Python integers for compatibility
+    full_capacity_robot_ids = [int(robot_id) for robot_id in full_capacity_robot_ids]
+
+    for robot_id in full_capacity_robot_ids:
+        if robot_id in ego_graphs:
+            # Set the ego graph for the robot to an empty list
+            ego_graphs[robot_id] = []
+            
 def pad_matrixmain(matrix, n_features=11):
     """Pad a matrix to ensure it has a specific number of features."""
     num, feature_dim = matrix.shape

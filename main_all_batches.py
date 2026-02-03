@@ -93,7 +93,9 @@ def main(args):
     
     print(f"Environment created with {env.n_tasks} tasks total")
     print(f"Max steps per episode (batch_time): {env.batch_time}")
-
+    # Save results and models
+    save_dir = Path(args.save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
     # Model hyperparams
     input_dim = args.feature_size
     hidden_dim = args.hidden_dim
@@ -113,23 +115,25 @@ def main(args):
     print(f"\nStarting training for {args.episodes} episodes...")
     t0 = time.time()
     episode_rewards = train(
-        env,
-        num_episodes=args.episodes,
-        actors=actors,
-        critic=critic,
-        optimizers_actors=optimizers_actors,
-        optimizer_critic=optimizer_critic,
-        gamma=args.gamma,
-        max_steps_per_episode=args.max_steps if args.max_steps > 0 else env.batch_time,
-        device=device,
-        verbose=args.verbose
-    )
+    env,
+    num_episodes=args.episodes,
+    actors=actors,
+    critic=critic,
+    optimizers_actors=optimizers_actors,
+    optimizer_critic=optimizer_critic,
+    gamma=args.gamma,
+    max_steps_per_episode=args.max_steps if args.max_steps > 0 else env.batch_time,
+    device=device,
+    verbose=args.verbose,
+    save_dir=save_dir,
+    save_every=10,  # Save every 10 episodes
+    plot_rewards_fn=plot_rewards,
+    save_models_fn=save_models
+)
     t1 = time.time()
     print(f"\nTraining finished in {t1 - t0:.1f}s")
 
-    # Save results and models
-    save_dir = Path(args.save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
+    
     
     # Save models
     save_models(save_dir, actors, critic)
@@ -153,16 +157,16 @@ if __name__ == "__main__":
                         help="Directory containing task batch files")
     parser.add_argument("--n-batches", type=int, default=10,
                         help="Number of batches to load")
-    parser.add_argument("--episodes", type=int, default=200,
+    parser.add_argument("--episodes", type=int, default=1,
                         help="Number of training episodes")
-    parser.add_argument("--max-steps", type=int, default=0,
+    parser.add_argument("--max-steps", type=int, default=1,
                         help="Max steps per episode (0 = use env.batch_time)")
     parser.add_argument("--feature-size", type=int, default=9)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr-actor", type=float, default=1e-3)
     parser.add_argument("--lr-critic", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--radius", type=int, default=20)
+    parser.add_argument("--radius", type=int, default=1000)
     parser.add_argument("--critic-agg", type=str, default="per_robot",
                         choices=["per_robot", "joint_mean", "joint_attn"])
     parser.add_argument("--use-true-id", action="store_true", dest="use_true_id")
