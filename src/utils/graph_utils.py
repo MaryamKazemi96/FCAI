@@ -147,18 +147,24 @@ def get_edge_idx_graph(attributes_matrix, n_tasks, n_robots, radius=20, use_true
     all_r_coords = all_coords[:n_robots]
     all_t_coords = all_coords[n_robots:].reshape(n_tasks, 1, 2)
     # --- NEW: remove assigned tasks from consideration ---
-    task_assigned_flags = attributes_matrix[n_robots:, -1]  # assuming last column is is_assigned
-    available_task_idx = np.where(task_assigned_flags == 0)[0]  # only unassigned tasks
+    # task_assigned_flags = attributes_matrix[n_robots:, -1]  # assuming last column is is_assigned
+    # available_task_idx = np.where(task_assigned_flags == 0)[0]  # only unassigned tasks
+    # print('[debug] available_task_idx:', available_task_idx)
     list_idx_in_matrix = np.arange(len(attributes_matrix))
     list_true_ids = attributes_matrix[:, 0]
     list_mapping = [list_idx_in_matrix, list_true_ids]
-    distance_m = within_distance(all_t_coords[available_task_idx], all_r_coords, radius=radius)
-
+    # distance_m = within_distance(all_t_coords[available_task_idx], all_r_coords, radius=radius)
+    distance_m = within_distance(all_t_coords, all_r_coords, radius=radius)
+    
+    # print('[debug] distance m', distance_m) 
     tid_matrix_offset0, rid_matrix = np.nonzero(distance_m)
+    # print('[debug] tid_matrix_offset0:', tid_matrix_offset0 , 'rid_matrix:', rid_matrix)
     tid_matrix = tid_matrix_offset0 + n_robots
     unique_tid, n_connected_r = np.unique(tid_matrix, return_counts=True)
     tid_true = list_true_ids[unique_tid]
     rid_true = list_true_ids[rid_matrix]
+    # print('[debug] unique_tid:', unique_tid , 'n_connected_r:', n_connected_r)
+    # print('[debug] tid_true:', tid_true , 'rid_true:', rid_true)
     previous_num_n =0
     for idx, tid_m in enumerate(unique_tid):
         num_n = n_connected_r[idx]

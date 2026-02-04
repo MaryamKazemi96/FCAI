@@ -159,7 +159,7 @@ if __name__ == "__main__":
                         help="Number of batches to load")
     parser.add_argument("--episodes", type=int, default=1,
                         help="Number of training episodes")
-    parser.add_argument("--max-steps", type=int, default=1,
+    parser.add_argument("--max-steps", type=int, default=157,
                         help="Max steps per episode (0 = use env.batch_time)")
     parser.add_argument("--feature-size", type=int, default=9)
     parser.add_argument("--hidden-dim", type=int, default=64)

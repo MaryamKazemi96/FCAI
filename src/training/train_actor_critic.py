@@ -696,8 +696,8 @@ def train(env, num_episodes, actors, critic,
 
                 # ---------- ACTOR (produce top-2 proposals and store logits) ----------
                 for rid, ego_list in ego_graphs.items():
-                    if rid<1:
-                        print(f" Robot {rid} has {len(ego_list), ego_list} ego edges.")
+                    # if rid<1:
+                        # print(f" Robot {rid} has {len(ego_list), ego_list} ego edges.")
                     if len(ego_list) == 0:
                         actions[rid] = []
                         continue
