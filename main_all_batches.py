@@ -157,16 +157,16 @@ if __name__ == "__main__":
                         help="Directory containing task batch files")
     parser.add_argument("--n-batches", type=int, default=10,
                         help="Number of batches to load")
-    parser.add_argument("--episodes", type=int, default=1,
+    parser.add_argument("--episodes", type=int, default=10,
                         help="Number of training episodes")
-    parser.add_argument("--max-steps", type=int, default=157,
+    parser.add_argument("--max-steps", type=int, default=700,
                         help="Max steps per episode (0 = use env.batch_time)")
     parser.add_argument("--feature-size", type=int, default=9)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr-actor", type=float, default=1e-3)
     parser.add_argument("--lr-critic", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--radius", type=int, default=1000)
+    parser.add_argument("--radius", type=int, default=30)
     parser.add_argument("--critic-agg", type=str, default="per_robot",
                         choices=["per_robot", "joint_mean", "joint_attn"])
     parser.add_argument("--use-true-id", action="store_true", dest="use_true_id")

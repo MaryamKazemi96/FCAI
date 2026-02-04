@@ -679,7 +679,7 @@ def train(env, num_episodes, actors, critic,
 
             step = 0
             while (not done) and step < max_steps_per_episode:
-                print(f" Episode {episode+1} Step {step+1} ---------------------")
+                # print(f" Episode {episode+1} Step {step+1} ---------------------")
                 actions = {}
                 # We'll fill log_probs AFTER env.step based on resolved assignments
                 log_probs = {}

@@ -535,7 +535,15 @@ class MultiTaskAllocationEnv(gym.Env):
         # Rebuild mapping from true task id to row index (task rows start at self.n_robots)
         self.trueid_idx_mapping = {t.id: (i + self.n_robots) for i, t in enumerate(self.tasks)}
 
-
+    def robot_id_to_index(self, robot_id):
+        """
+        Map a robot's unique id to its index in the robots list.
+        Returns None if not found.
+        """
+        for idx, robot in enumerate(self.robots):
+            if robot.robot_id == robot_id:
+                return idx
+        return None
     def update_graph(self):
         # Filter tasks based on release time
         # print(f"Task States: {[t.id for t in self.tasks]} -> {[t.is_assigned for t in self.tasks]} -> {[t.release_time for t in self.tasks]}")
@@ -559,11 +567,6 @@ class MultiTaskAllocationEnv(gym.Env):
         full_capacity_robots = [robot for robot in self.robots if robot.capacity >= 3]
         active_robots = [robot for robot in self.robots if robot.capacity < 3]
 
-        print(f"Active robots: {[robot.robot_id for robot in active_robots]}")
-        # print(f"Full-capacity robots: {[robot.robot_id for robot in full_capacity_robots]}")
-        # print(self.attributes_matrix.shape, 'attributes matrix shape in update graph')
-        # print(f"Attributes Matrix Shape: {self.attributes_matrix.shape}")
-        # print(f"Attributes Matrix Contents: {self.attributes_matrix}")
         # task_assigned_flags = self.attributes_matrix[self.n_robots:, -1]  # assuming last column is is_assigned
         # available_task_idx = np.where(task_assigned_flags == 0)[0]
         # print(f"Available Task Indices: {available_task_idx}")
@@ -575,9 +578,13 @@ class MultiTaskAllocationEnv(gym.Env):
 
         # Remove edges for full-capacity robots
         full_capacity_robot_ids = [robot.robot_id for robot in full_capacity_robots]
+        
+        full_capacity_robot_indexes = [self.robot_id_to_index(rid) for rid in full_capacity_robot_ids]
+        
+
         # print(full_capacity_robot_ids, 'full capacity robot ids in update graph')
         from utils.graph_utils import remove_robot_edges
-        remove_robot_edges(self.list_ego_graphs, full_capacity_robot_ids)
+        remove_robot_edges(self.list_ego_graphs, full_capacity_robot_indexes)
 
         # Remove assigned tasks from the ego graphs
         assigned_task_ids = [t.id for t in self.tasks if t.is_assigned]
@@ -591,7 +598,7 @@ class MultiTaskAllocationEnv(gym.Env):
         # delete_taskid_in_graph(self.list_ego_graphs, id_to_remove)
         # print(f"Ego graphs before removing assigned tasks: {self.list_ego_graphs}")
         delete_taskid_in_graph(self.list_ego_graphs, id_to_remove)
-        # print(f"Ego graphs after removing assigned tasks: {self.list_ego_graphs}")
+        # print(f"Ego graphs after removing assigned tasks and full capacity robots: {self.list_ego_graphs}")
         return self.list_ego_graphs
 
     def resolve_conflicts(self, assignments):
@@ -770,7 +777,7 @@ class MultiTaskAllocationEnv(gym.Env):
 
             # Resolve conflicts using top-2 list ---
             resolved_assignments = self.resolve_conflicts(list_t2r_assignments)
-            print("Assignments after conflict resolution:", resolved_assignments)
+            # print("Assignments after conflict resolution:", resolved_assignments)
             self._get_final_assigment(resolved_assignments)
             # after assignment application (one-shot or iterative)
             final_assignments_for_step = resolved_assignments.copy() if 'resolved_assignments' in locals() else {}
