@@ -408,30 +408,53 @@ def plot_task_stats(save_dir: Path, episode_task_stats):
         print("Warning: failed to plot task stats:", e)
 
 
-def plot_losses(save_dir: Path, losses, loss_type: str):
+def plot_losses(save_dir: Path, critic_losses, actor_losses):
+    """Plot critic loss and actor loss over episodes with moving averages."""
     try:
+        # Critic Loss Plot
         plt.figure(figsize=(10, 5))
-        plt.plot(losses, alpha=0.6, label='Raw Loss')
+        plt.plot(critic_losses, alpha=0.6, label='Raw Loss', color='blue')
         
         # Add moving average
-        if len(losses) > 10:
-            window = min(50, len(losses) // 10)
-            moving_avg = np.convolve(losses, np.ones(window)/window, mode='valid')
-            plt.plot(range(window-1, len(losses)), moving_avg, 
+        if len(critic_losses) > 10:
+            window = min(50, len(critic_losses) // 10)
+            moving_avg = np.convolve(critic_losses, np.ones(window)/window, mode='valid')
+            plt.plot(range(window-1, len(critic_losses)), moving_avg, 
                      'r-', linewidth=2, label=f'MA({window})')
         
         plt.xlabel("Episode")
-        plt.ylabel(f"{loss_type} Loss")
-        plt.title(f"{loss_type} Loss Over Training")
+        plt.ylabel("Critic Loss")
+        plt.title("Critic Loss Over Training")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig(save_dir / f"{loss_type.lower()}_loss.png", dpi=150)
+        plt.savefig(save_dir / "critic_loss.png", dpi=150)
         plt.close()
-    except Exception as e:
-        print(f"Warning: failed to plot {loss_type.lower()} loss:", e)
-
+        print(f"Saved critic loss plot to {save_dir / 'critic_loss.png'}")
         
+        # Actor Loss Plot
+        plt.figure(figsize=(10, 5))
+        plt.plot(actor_losses, alpha=0.6, label='Raw Loss', color='red')
+        
+        # Add moving average
+        if len(actor_losses) > 10:
+            window = min(50, len(actor_losses) // 10)
+            moving_avg = np.convolve(actor_losses, np.ones(window)/window, mode='valid')
+            plt.plot(range(window-1, len(actor_losses)), moving_avg, 
+                     'orange', linewidth=2, label=f'MA({window})')
+        
+        plt.xlabel("Episode")
+        plt.ylabel("Actor Loss (Total)")
+        plt.title("Actor Loss Over Training")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(save_dir / "actor_loss.png", dpi=150)
+        plt.close()
+        print(f"Saved actor loss plot to {save_dir / 'actor_loss.png'}")
+        
+    except Exception as e:
+        print(f"Warning: failed to plot losses: {e}")
 def plot_values(save_dir: Path, episode_values):
     try:
         plt.figure(figsize=(10, 5))
@@ -516,7 +539,6 @@ def main(args):
     num_robots = env.n_robots
     actors = {rid: ActorGNN(input_dim, hidden_dim).to(device) for rid in range(num_robots)}
     
-    # 🔥 FIXED: Lower learning rates
     optimizers_actors = {
         rid: torch.optim.Adam(actor.parameters(), lr=args.lr_actor)
         for rid, actor in actors.items()
@@ -526,7 +548,7 @@ def main(args):
     critic = CriticGNN(input_dim, hidden_dim, critic_aggregation).to(device)
     optimizer_critic = torch.optim.Adam(critic.parameters(), lr=args.lr_critic)
 
-    # 🔥 NEW: Create learning rate schedulers
+    #Create learning rate schedulers
     print(f"\nInitial learning rates:")
     print(f"  Actor: {args.lr_actor:.2e}")
     print(f"  Critic: {args.lr_critic:.2e}")
@@ -561,8 +583,8 @@ def main(args):
         critic=critic,
         optimizers_actors=optimizers_actors,
         optimizer_critic=optimizer_critic,
-        schedulers_actors=schedulers_actors,  # 🔥 NEW
-        scheduler_critic=scheduler_critic,     # 🔥 NEW
+        schedulers_actors=schedulers_actors,  
+        scheduler_critic=scheduler_critic,     
         gamma=args.gamma,
         max_steps_per_episode=args.max_steps if args.max_steps > 0 else env.batch_time,
         device=device,
@@ -573,7 +595,8 @@ def main(args):
         plot_task_stats=plot_task_stats,
         plot_values_fn=plot_values,
         save_models_fn=save_models,
-        assignment_interval=args.assignment_interval  # 🔥 NEW
+        assignment_interval=args.assignment_interval,
+        n_step= 250
     )
     t1 = time.time()
     print(f"\nTraining finished in {t1 - t0:.1f}s ({(t1-t0)/args.episodes:.2f}s per episode)")
@@ -602,6 +625,7 @@ def main(args):
     plot_values(save_dir, episode_value_means)
     plot_task_stats(save_dir, episode_task_stats)
     plot_rewards(save_dir, episode_rewards)
+    plot_losses(save_dir, critic_losses, actor_losses)
     
     # Print final statistics
     print("\n" + "="*60)
@@ -633,11 +657,11 @@ if __name__ == "__main__":
                         help="Path to agents.npy file")
     parser.add_argument("--data-dir", type=str, default="data",
                         help="Directory containing task batch files")
-    parser.add_argument("--n-batches", type=int, default=10,
+    parser.add_argument("--n-batches", type=int, default=3,
                         help="Number of batches to load")
     parser.add_argument("--episodes", type=int, default=10,
                         help="Number of training episodes")
-    parser.add_argument("--max-steps", type=int, default=700,
+    parser.add_argument("--max-steps", type=int, default=250,
                         help="Max steps per episode (0 = use env.batch_time)")
     parser.add_argument("--feature-size", type=int, default=9)
     parser.add_argument("--hidden-dim", type=int, default=64)

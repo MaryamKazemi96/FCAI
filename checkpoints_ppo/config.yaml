@@ -1,0 +1,43 @@
+environment:
+  agents_file: data/agents.npy
+  assignment_interval: 5
+  data_dir: data
+  feature_size: 9
+  max_steps: 700
+  n_batches: 3
+  n_robots: 5
+  radius: 30
+  robot_capacity: 3
+  use_true_id: false
+experiment:
+  device: cpu
+  name: warehouse_ppo_15tasks
+  seed: 42
+model:
+  activation: relu
+  dropout: 0.0
+  gnn_type: graphsage
+  hidden_dim: 64
+  num_gnn_layers: 2
+ppo:
+  batch_size: 64
+  clip_range: 0.2
+  clip_range_vf: null
+  ent_coef: 0.1
+  gae_lambda: 0.95
+  gamma: 0.95
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  n_epochs: 10
+  n_steps: 256
+  sde_sample_freq: -1
+  use_sde: false
+  vf_coef: 0.5
+training:
+  checkpoint_dir: checkpoints_ppo
+  eval_episodes: 100
+  eval_freq: 10000
+  log_interval: 1
+  save_freq: 10000
+  tensorboard_log: tensorboard_logs
+  total_timesteps: 50000
