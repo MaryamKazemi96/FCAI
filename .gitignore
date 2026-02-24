@@ -5,3 +5,5 @@ checkpoints_all_batches/
 *.pt
 *.png
 *.json
+tensorboard_logs/
+*.npy
