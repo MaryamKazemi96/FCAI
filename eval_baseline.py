@@ -202,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate baseline policies for warehouse environment')
     parser.add_argument('--config', type=str, default='configs/training_config.yaml',
                        help='Path to training config')
-    parser.add_argument('--episodes', type=int, default=100,
+    parser.add_argument('--episodes', type=int, default=20,
                        help='Number of episodes per policy')
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed')

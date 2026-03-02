@@ -115,8 +115,13 @@ class WarehouseEnvSB3Final(gym.Env):
         # Convert reward
         if isinstance(reward, dict):
             reward = sum(reward.values())
-        
-        # 🔥 If episode ending, save stats to info
+        # merge info_reward into info so SB3 can log it
+        if isinstance(info_reward, dict):
+            for k, v in info_reward.items():
+                # prefix to avoid collisions with other keys
+                info[f"rew/{k}"] = v
+
+        # If episode ending, save stats to info
         if done or truncated:
             info['episode_completed'] = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
             info['episode_obsolete'] = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))

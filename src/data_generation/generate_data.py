@@ -129,9 +129,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate batch data with release times for multi-robot task allocation"
     )
-    parser.add_argument("--n-batches", type=int, default=3,
+    parser.add_argument("--n-batches", type=int, default=5,
                         help="Number of batches to generate (default: 10)")
-    parser.add_argument("--n-tasks", type=int, default=5,
+    parser.add_argument("--n-tasks", type=int, default=8,
                         help="Number of tasks per batch (default: 10)")
     parser.add_argument("--n-robots", type=int, default=5,
                         help="Number of robots/agents (default: 5)")

@@ -75,7 +75,7 @@ class Planner:
         return found, path # this path is all cell with [h,w] order
     
 class Robot:
-    def __init__(self, id, init_coordinates, maxCapacity=3, feature_size=9):
+    def __init__(self, id, init_coordinates, maxCapacity=2, feature_size=9):
         self.robot_id = id
         self.coordinate = np.array([init_coordinates[1], init_coordinates[0], init_coordinates[2]], dtype=np.float32).reshape(1, -1)
         self.coordinate = self.coordinate[0]
@@ -284,10 +284,10 @@ class Tasks_variable:
         return current_time >= self.release_time
 
     def is_obsolete(self, current_time=0):
-        if (not self.is_pickedup) and (current_time > self.ddl_pick *2):
+        if (not self.is_pickedup) and (current_time > self.ddl_pick ):
             return 1
         # if picked up but dropoff deadline passed and still not dropped
-        if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff*2 ):
+        if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff ):
             return 1
         return 0
         # if self.ddl_pick > current_time and not self.is_pickedup:
@@ -349,10 +349,10 @@ class Tasks_variable:
         ]
         return att
 class MultiTaskAllocationEnv(gym.Env):
-    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=2000, feature_size=9, use_true_id=False, all_batches=False):
+    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=20, feature_size=9, use_true_id=False, all_batches=False):
         super(MultiTaskAllocationEnv, self).__init__()
         self.planner = Planner()
-        self.robot_capacity = 3
+        self.robot_capacity = 2
         self.radius = radius
         self.feature_size = feature_size
         self.agents_cont_coord_array = agents_cont_coord_array
@@ -564,8 +564,8 @@ class MultiTaskAllocationEnv(gym.Env):
         self._init_attribute_matrix()
 
         # Separate robots into active and full-capacity
-        full_capacity_robots = [robot for robot in self.robots if robot.capacity >= 3]
-        active_robots = [robot for robot in self.robots if robot.capacity < 3]
+        full_capacity_robots = [robot for robot in self.robots if robot.capacity >= 2]
+        active_robots = [robot for robot in self.robots if robot.capacity < 2]
 
         # task_assigned_flags = self.attributes_matrix[self.n_robots:, -1]  # assuming last column is is_assigned
         # available_task_idx = np.where(task_assigned_flags == 0)[0]
@@ -1200,13 +1200,13 @@ class MultiTaskAllocationEnv(gym.Env):
         """Reward focused on actual task completion, not just activity."""
         n_robots = max(1, len(self.robots))
         
-        # 🔥 INCREASED: Make sparse rewards dominant
-        pickup_reward = 5.0              # Was 1.0 → 5x bigger
-        completion_reward_per_task = 20.0  # Was 5.0 → 4x bigger
-        obsolete_penalty_amount = -10.0    # Was -4.0 → stronger penalty
-        new_assignment_bonus = 1.0        # Was 2.0 → smaller (assignment doesn't mean success)
+        # INCREASED: Make sparse rewards dominant
+        pickup_reward = 1.0              # Was 1.0 → 5x bigger
+        completion_reward_per_task = 2.0  # Was 5.0 → 4x bigger
+        obsolete_penalty_amount = -1.0    # Was -4.0 → stronger penalty
+        new_assignment_bonus = 0.2        # Was 2.0 → smaller (assignment doesn't mean success)
         
-        # 🔥 REDUCED: Make dense rewards tiny (just for breaking ties)
+        # REDUCED: Make dense rewards tiny (just for breaking ties)
         progress_reward = 0.001          # Was 0.1 → 100x smaller!
         idle_penalty = -0.001            # Was -0.05 → 50x smaller
         capacity_utilization_bonus = 0.001  # Was 0.2 → 200x smaller!
@@ -1263,7 +1263,7 @@ class MultiTaskAllocationEnv(gym.Env):
                 new_assignments += 1
                 task.assignment_bonus_given = True
 
-        # 🔥 TINY dense rewards (just for tie-breaking, not dominating)
+        # TINY dense rewards (just for tie-breaking, not dominating)
         for rid, robot in enumerate(self.robots):
             if len(robot.trajectory) > 0 or len(robot.goal_list) > 0:
                 rewards[rid] += progress_reward * len(robot.current_tasks_id)
