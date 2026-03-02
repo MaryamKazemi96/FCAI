@@ -20,50 +20,161 @@ from train_ppo import make_env, load_config
 POLICIES = ["random", "greedy", "unique"]
 
 
+# def random_policy(env, obs, info, rng: np.random.Generator):
+#     """
+#     Random baseline: randomly select a valid action.
+#     """
+#     # For Discrete action space, just sample
+#     return env.action_space.sample()
+
+
+# def greedy_nearest_policy(env, obs, info):
+#     """
+#     Greedy baseline: always pick the first valid action (action 0).
+#     This represents "greedy nearest" - always pick the nearest/first available option.
+#     """
+#     # For discrete action space, action 0 is typically the first/nearest
+#     return 0
+
+
+# def greedy_unique_policy(env, obs, info, chosen_actions_history):
+#     """
+#     Greedy unique baseline: try to pick different actions to avoid conflicts.
+    
+#     In a discrete action space representing task assignments, we try to spread
+#     out action choices to reduce conflicts.
+#     """
+#     # Simple strategy: cycle through actions to encourage diversity
+#     # This is a heuristic for "unique" in discrete action space
+    
+#     # Try actions in order, skipping recently used ones
+#     n_actions = env.action_space.n
+    
+#     # Prefer actions we haven't used recently
+#     for action in range(n_actions):
+#         if action not in chosen_actions_history:
+#             chosen_actions_history.add(action)
+#             # Clear history periodically to allow reuse
+#             if len(chosen_actions_history) > n_actions // 2:
+#                 chosen_actions_history.clear()
+#             return action
+    
+#     # If all recently used, just pick first (greedy fallback)
+#     chosen_actions_history.clear()
+#     return 0
+
 def random_policy(env, obs, info, rng: np.random.Generator):
     """
-    Random baseline: randomly select a valid action.
+    Random baseline for MultiDiscrete([K+1]*R):
+    sample a valid slot for each robot using obs['action_mask'] when available.
     """
-    # For Discrete action space, just sample
-    return env.action_space.sample()
+    action_space = env.action_space
+
+    # MultiDiscrete expected
+    if not hasattr(action_space, "nvec"):
+        # fallback for Discrete (old)
+        return int(action_space.sample())
+
+    R = len(action_space.nvec)
+
+    # Prefer mask from observation (your env includes it in obs)
+    mask = None
+    if isinstance(obs, dict) and "action_mask" in obs:
+        mask = obs["action_mask"]  # shape [R, K+1]
+    elif isinstance(info, dict) and "action_mask" in info:
+        mask = info["action_mask"]
+
+    if mask is None:
+        # no mask -> sample blindly
+        return action_space.sample()
+
+    mask = np.asarray(mask)
+    a = np.zeros((R,), dtype=np.int64)
+    for r in range(R):
+        allowed = np.flatnonzero(mask[r] > 0.5)
+        if allowed.size == 0:
+            a[r] = int(action_space.nvec[r] - 1)  # last index as NOOP
+        else:
+            a[r] = int(rng.choice(allowed))
+    return a
 
 
 def greedy_nearest_policy(env, obs, info):
     """
-    Greedy baseline: always pick the first valid action (action 0).
-    This represents "greedy nearest" - always pick the nearest/first available option.
+    Greedy baseline (colleague-style):
+    for each robot, pick the FIRST valid candidate slot (lowest index),
+    otherwise pick NOOP.
     """
-    # For discrete action space, action 0 is typically the first/nearest
-    return 0
+    action_space = env.action_space
+    if not hasattr(action_space, "nvec"):
+        return 0  # old discrete fallback
+
+    R = len(action_space.nvec)
+    Kp1 = int(action_space.nvec[0])
+    NOOP = Kp1 - 1
+
+    mask = None
+    if isinstance(obs, dict) and "action_mask" in obs:
+        mask = obs["action_mask"]
+    elif isinstance(info, dict) and "action_mask" in info:
+        mask = info["action_mask"]
+
+    if mask is None:
+        # no mask -> always 0 (may be invalid)
+        return np.zeros((R,), dtype=np.int64)
+
+    mask = np.asarray(mask)
+    a = np.full((R,), NOOP, dtype=np.int64)
+    for r in range(R):
+        # choose smallest valid non-NOOP slot if possible
+        valid_slots = np.flatnonzero(mask[r, :NOOP] > 0.5)
+        if valid_slots.size > 0:
+            a[r] = int(valid_slots[0])
+        else:
+            a[r] = NOOP
+    return a
 
 
-def greedy_unique_policy(env, obs, info, chosen_actions_history):
+def greedy_unique_policy(env, obs, info, chosen_tasks_this_step=None):
     """
-    Greedy unique baseline: try to pick different actions to avoid conflicts.
-    
-    In a discrete action space representing task assignments, we try to spread
-    out action choices to reduce conflicts.
+    Greedy unique baseline:
+    try to avoid multiple robots picking the same candidate slot in the same step.
+
+    NOTE: In your env, two robots picking the same task can still happen depending
+    on how candidates are built. Without seeing candidate IDs in obs, we can only
+    avoid duplicate slots, not duplicate task IDs.
     """
-    # Simple strategy: cycle through actions to encourage diversity
-    # This is a heuristic for "unique" in discrete action space
-    
-    # Try actions in order, skipping recently used ones
-    n_actions = env.action_space.n
-    
-    # Prefer actions we haven't used recently
-    for action in range(n_actions):
-        if action not in chosen_actions_history:
-            chosen_actions_history.add(action)
-            # Clear history periodically to allow reuse
-            if len(chosen_actions_history) > n_actions // 2:
-                chosen_actions_history.clear()
-            return action
-    
-    # If all recently used, just pick first (greedy fallback)
-    chosen_actions_history.clear()
-    return 0
+    action_space = env.action_space
+    if not hasattr(action_space, "nvec"):
+        return 0  # old discrete fallback
 
+    R = len(action_space.nvec)
+    Kp1 = int(action_space.nvec[0])
+    NOOP = Kp1 - 1
 
+    mask = None
+    if isinstance(obs, dict) and "action_mask" in obs:
+        mask = obs["action_mask"]
+    elif isinstance(info, dict) and "action_mask" in info:
+        mask = info["action_mask"]
+
+    if mask is None:
+        return np.full((R,), NOOP, dtype=np.int64)
+
+    mask = np.asarray(mask)
+    a = np.full((R,), NOOP, dtype=np.int64)
+
+    used_slots = set() if chosen_tasks_this_step is None else chosen_tasks_this_step
+
+    for r in range(R):
+        # choose smallest valid slot not already used
+        for k in range(NOOP):
+            if mask[r, k] > 0.5 and k not in used_slots:
+                a[r] = int(k)
+                used_slots.add(k)
+                break
+
+    return a
 def evaluate_policy(env, policy_name: str, n_episodes: int = 100, seed: int = 42) -> Dict:
     """
     Evaluate a baseline policy.
@@ -99,8 +210,8 @@ def evaluate_policy(env, policy_name: str, n_episodes: int = 100, seed: int = 42
         
         # Reset unique policy history each episode
         if policy_name == "unique":
-            chosen_actions_history.clear()
-        
+            # chosen_actions_history.clear()
+            action = greedy_unique_policy(env, obs, info, chosen_tasks_this_step=set())
         # Debug first episode
         if ep == 0:
             print(f"\n[DEBUG] First episode observation type: {type(obs)}")
@@ -120,11 +231,15 @@ def evaluate_policy(env, policy_name: str, n_episodes: int = 100, seed: int = 42
                 raise ValueError(f"Unknown policy: {policy_name}")
             
             # Ensure action is a scalar integer (not array)
-            if isinstance(action, np.ndarray):
-                action = int(action.item())
+            # if isinstance(action, np.ndarray):
+            #     action = int(action.item())
+            # else:
+            #     action = int(action)
+            # NEW: handle MultiDiscrete actions
+            if hasattr(env.action_space, "nvec"):
+                action = np.asarray(action, dtype=np.int64)
             else:
                 action = int(action)
-            
             # Debug first action
             if ep == 0 and step_count == 0:
                 print(f"[DEBUG] First action: {action}, type: {type(action)}")
