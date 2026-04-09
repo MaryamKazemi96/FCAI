@@ -155,7 +155,7 @@ class FinalTaskAllocationCallback(BaseCallback):
 
                 self.logger.record('task/completed', completed)
                 self.logger.record('task/obsolete', obsolete)
-                self.logger.record('task/completion_rate', 100 * completed / 15)
+                self.logger.record('task/completion_rate', 100 * completed / 24)
 
                 for k, s in self._ep_rew_sums.items():
                     self.logger.record(f"{k}_episode_sum", float(s))
@@ -163,7 +163,7 @@ class FinalTaskAllocationCallback(BaseCallback):
 
                 if self.verbose > 0 and self.episode_count % 10 == 0:
                     recent = min(10, len(self.episode_completions))
-                    print(f"\n[Episode {self.episode_count}] Completed: {completed}/15, Obsolete: {obsolete}")
+                    print(f"\n[Episode {self.episode_count}] Completed: {completed}/24, Obsolete: {obsolete}")
                     print(f"  Last {recent} avg: {np.mean(self.episode_completions[-recent:]):.1f} completed")
 
         if self.n_calls % self.save_freq == 0 and len(self.episode_completions) > 0:

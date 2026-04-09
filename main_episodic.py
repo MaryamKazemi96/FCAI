@@ -333,7 +333,7 @@ import random
 import os
 
 from src.environment.environment import MultiTaskAllocationEnv
-from src.models.actor_critic import ActorGNN, CriticGNN
+from models.actor_critic_old import ActorGNN, CriticGNN
 from src.training.train_actor_critic import train
 
 # --- Utilities ---

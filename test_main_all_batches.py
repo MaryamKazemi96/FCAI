@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from pathlib import Path
 from src.environment.environment import MultiTaskAllocationEnv
-from src.models.actor_critic import ActorGNN, CriticGNN
+from models.actor_critic_old import ActorGNN, CriticGNN
 from src.training.train_actor_critic import train
 from main_all_batches import load_all_batches, set_seed, save_models, plot_rewards, plot_task_stats, plot_values
 

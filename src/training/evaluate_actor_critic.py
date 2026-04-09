@@ -1,6 +1,6 @@
 import torch
 from src.environment.environment import MultiTaskAllocationEnv
-from src.models.actor_critic import ActorCritic
+from models.actor_critic_old import ActorCritic
 import numpy as np
 
 def evaluate(env, model, num_episodes=10):

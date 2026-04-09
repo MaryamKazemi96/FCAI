@@ -292,7 +292,7 @@ import random
 import time
 import copy
 from src.environment.environment import MultiTaskAllocationEnv, TASK_RELEASE_TIME_INDEX
-from src.models.actor_critic import ActorGNN, CriticGNN
+from models.actor_critic_old import ActorGNN, CriticGNN
 from src.training.train_actor_critic import train
 
 # --- Utilities ---
