@@ -137,10 +137,6 @@ def make_env(config: Dict, seed: int):
 # Evaluation runner
 # ============================================================
 
-<<<<<<< HEAD
-COMP_KEYS: List[str] = ["rew/pickup", "rew/delivery", "rew/obsolete", "rew/step_penalty"]
-
-=======
 COMP_KEYS: List[str] = [
   "rew/pickups_this_step",
   "rew/deliveries_this_step",
@@ -148,7 +144,6 @@ COMP_KEYS: List[str] = [
   "rew/step_penalty",
 ]
 # ["rew/pickup", "rew/delivery", "rew/obsolete", "rew/step_penalty"]
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
 
 def run_evaluation(
     model_path: Path,
@@ -309,16 +304,6 @@ def load_tensorboard_data(tb_dir: Path) -> Dict[str, Dict[str, List[float]]]:
 # Evaluation plots
 # ============================================================
 
-<<<<<<< HEAD
-def plot_eval_rewards_per_episode(det_data: Dict, stoch_data: Dict, out_png: Path, ma_window: int = 10) -> None:
-    """Line plot of per-episode rewards for deterministic and stochastic modes."""
-    fig, ax = plt.subplots(figsize=(14, 6), facecolor="white")
-    ax.set_facecolor("#fafafa")
-
-    for label, color, data in [
-        ("PPO Deterministic", "#2980b9", det_data),
-        ("PPO Stochastic", "#e67e22", stoch_data),
-=======
 # def plot_eval_rewards_per_episode(det_data: Dict, stoch_data: Dict, out_png: Path, ma_window: int = 10) -> None:
 #     """Line plot of per-episode rewards for deterministic and stochastic modes."""
 #     fig, ax = plt.subplots(figsize=(14, 6), facecolor="white")
@@ -374,7 +359,6 @@ def plot_eval_rewards_per_episode(
     for label, color, data in [
         ("PPO Deterministic", "#2980b9", det_data),
         ("PPO Stochastic", "#3CB371", stoch_data),
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     ]:
         if data is None:
             continue
@@ -382,17 +366,6 @@ def plot_eval_rewards_per_episode(
         if rewards.size == 0:
             continue
         episodes = np.arange(1, rewards.size + 1)
-<<<<<<< HEAD
-        ax.plot(episodes, rewards, alpha=0.2, color=color, linewidth=0.8)
-        ax.plot(episodes, _moving_average(rewards, ma_window), lw=2.4, color=color,
-                label=f"{label} MA({ma_window}) – mean {rewards.mean():.2f}")
-        ax.axhline(rewards.mean(), color=color, lw=1.5, ls="--", alpha=0.6)
-
-    ax.set_xlabel("Episode", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Episode Reward", fontsize=11, fontweight="bold")
-    ax.set_title("Evaluation: Per-Episode Rewards (Deterministic vs Stochastic)", fontsize=14, fontweight="bold")
-    ax.legend(fontsize=10)
-=======
         ax.plot(episodes, rewards, alpha=0.18, color=color, linewidth=0.8)
         ax.plot(
             episodes,
@@ -441,37 +414,12 @@ def plot_eval_rewards_per_episode(
         fontweight="bold",
     )
     ax.legend(fontsize=9)
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     ax.grid(alpha=0.25)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     _save_fig(fig, out_png)
 
 
-<<<<<<< HEAD
-def plot_eval_rewards_boxplot(
-    det_data: Optional[Dict],
-    stoch_data: Optional[Dict],
-    baselines: Dict[str, Dict],
-    out_png: Path,
-) -> None:
-    """Boxplot: PPO-Det, PPO-Stoch, then baseline policies."""
-    ordered: Dict[str, np.ndarray] = {}
-    for label, data in [("PPO Det", det_data), ("PPO Stoch", stoch_data)]:
-        if data is not None:
-            arr = np.asarray(data.get("rewards", []), dtype=float)
-            if arr.size:
-                ordered[label] = arr
-    for name, d in baselines.items():
-        arr = np.asarray(d.get("rewards", []), dtype=float)
-        if arr.size:
-            ordered[name] = arr
-
-    if not ordered:
-        print("[WARN] No reward data for boxplot.")
-        return
-
-=======
 def plot_training_noop_fraction(tb_data: Dict, out_png: Path, ma_window: int) -> None:
     """
     Plot NOOP fraction during training (TensorBoard scalar: policy/noop_fraction).
@@ -542,7 +490,6 @@ def plot_eval_rewards_boxplot(
         print("[WARN] No reward data for boxplot.")
         return
 
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     labels = list(ordered.keys())
     series = list(ordered.values())
 
@@ -879,32 +826,6 @@ def plot_agg_completion_obsolete(
     ax.spines["right"].set_visible(False)
     _save_fig(fig, out_png)
 
-<<<<<<< HEAD
-
-# ============================================================
-# Per-seed processing
-# ============================================================
-
-def process_seed(
-    seed: int,
-    seed_dir: Path,
-    root_dir: Path,
-    config: Dict,
-    n_episodes: int,
-    model_name: str,
-    skip_eval: bool,
-    ma_window: int,
-    baseline_std: bool,
-) -> tuple:
-    """Run/load eval for one seed and produce all per-seed plots. Returns (det_result, stoch_result)."""
-    model_path = seed_dir / f"{model_name}.zip"
-    if not model_path.exists():
-        print(f"[WARN] Model not found: {model_path} – skipping seed {seed}")
-        return None, None
-
-    plots_dir = seed_dir / "eval_plots"
-
-=======
 def plot_training_noop_fraction(tb_data: Dict, out_png: Path, ma_window: int) -> None:
     """
     Plot the fraction of robot-actions that are NOOP (from TensorBoard tag policy/noop_fraction).
@@ -969,7 +890,6 @@ def process_seed(
 
     plots_dir = seed_dir / "eval_plots_NOOPFixed"
 
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     det_json = seed_dir / "eval_results_deterministic.json"
     stoch_json = seed_dir / "eval_results_stochastic.json"
 
@@ -1002,13 +922,6 @@ def process_seed(
     # --- Evaluation plots ---
     print(f"\n  [seed {seed}] Generating evaluation plots → {plots_dir}")
 
-<<<<<<< HEAD
-    plot_eval_rewards_per_episode(
-        det_result, stoch_result,
-        out_png=plots_dir / "eval_rewards_per_episode.png",
-        ma_window=ma_window,
-    )
-=======
     # plot_eval_rewards_per_episode(
     #     det_result, stoch_result,
     #     out_png=plots_dir / "eval_rewards_per_episode.png",
@@ -1021,7 +934,6 @@ def process_seed(
     out_png=plots_dir / "eval_rewards_per_episode.png",
     ma_window=ma_window,
 )
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     plot_eval_rewards_boxplot(
         det_result, stoch_result, baselines_for_plot,
         out_png=plots_dir / "eval_rewards_boxplot.png",
@@ -1034,11 +946,8 @@ def process_seed(
         det_result, stoch_result,
         out_png=plots_dir / "eval_reward_components.png",
     )
-<<<<<<< HEAD
-=======
     
     
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
 
     # --- Training plots ---
     tb_dir = seed_dir / "tensorboard"
@@ -1067,14 +976,11 @@ def process_seed(
                 out_png=plots_dir / "training_value_loss.png",
                 ma_window=ma_window,
             )
-<<<<<<< HEAD
-=======
             plot_training_noop_fraction(
             tb_data,
             out_png=plots_dir / "training_noop_fraction.png",
             ma_window=ma_window,
         )
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     else:
         print(f"  [seed {seed}] No TensorBoard directory found at {tb_dir}; skipping training plots.")
 
@@ -1177,11 +1083,7 @@ def main() -> None:
         _save_json(_agg(all_stoch_results, False), root_dir / "eval_results_all_seeds_stochastic.json")
 
     # Aggregate plots
-<<<<<<< HEAD
-    agg_plots_dir = root_dir / "eval_plots"
-=======
     agg_plots_dir = root_dir / "eval_plotsNOOPFixed"
->>>>>>> 46e5138 (april 13- evaluation in both stocastic and deterministic policy added to plot_evaluation, deterministic works fine stochastic worse than all baselines!)
     baselines = load_baselines_all(root_dir)
 
     print(f"\nGenerating aggregate plots → {agg_plots_dir}")
