@@ -224,7 +224,7 @@ class WarehouseEnvSB3Final(gym.Env):
         print(f"  Assignment interval: {self.assignment_interval}")
         print(f"  Action: MultiDiscrete([K+1]*R) with K={self.k_max} and NOOP={self.noop_index}")
 
-        # Observation space (✅ add action_mask)
+        # Observation space (add action_mask)
         self.observation_space = spaces.Dict({
             'node_features': spaces.Box(
                 low=-np.inf, high=np.inf,
@@ -239,7 +239,7 @@ class WarehouseEnvSB3Final(gym.Env):
             'num_nodes': spaces.Box(low=0, high=self.max_nodes, shape=(1,), dtype=np.int64),
             'num_edges': spaces.Box(low=0, high=self.max_edges, shape=(1,), dtype=np.int64),
 
-            # ✅ NEW: per-robot action mask (0/1)
+            # NEW: per-robot action mask (0/1)
             'action_mask': spaces.Box(
                 low=0.0, high=1.0,
                 shape=(self.n_robots, self.k_max + 1),
@@ -252,7 +252,7 @@ class WarehouseEnvSB3Final(gym.Env):
 ),
         })
 
-        # ✅ CHANGED: MultiDiscrete action
+        # CHANGED: MultiDiscrete action
         self.action_space = spaces.MultiDiscrete([self.k_max + 1] * self.n_robots)
 
         self.max_nodes = max_nodes
@@ -420,12 +420,14 @@ class WarehouseEnvSB3Final(gym.Env):
         info['episode_completed'] = self.last_episode_completed
         info['episode_obsolete'] = self.last_episode_obsolete
         info["cand_task_ids"] = self._last_cand_task_ids
+        info["action_mask"] = self._action_mask_matrix()
 
         return self._convert_observation(obs), info
 
     def step(self, action):
         self.step_count += 1
-        is_decision_step = (self.step_count % self.assignment_interval == 0)
+        # is_decision_step = (self.step_count % self.assignment_interval == 0)
+        is_decision_step = ((self.step_count - 1) % self.assignment_interval == 0)
 
         if is_decision_step:
             self._last_cand_task_ids = self._build_candidates()
@@ -453,6 +455,8 @@ class WarehouseEnvSB3Final(gym.Env):
             info['episode_completed'] = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
             info['episode_obsolete'] = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
             info["cand_task_ids"] = self._last_cand_task_ids
+            info["action_mask"] = self._action_mask_matrix()
+            info["decoded_assignments"] = assignments  # for debugging
 
         return self._convert_observation(obs), reward, done, truncated, info
 

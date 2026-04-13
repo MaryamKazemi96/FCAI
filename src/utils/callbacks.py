@@ -120,20 +120,42 @@ class FinalTaskAllocationCallback(BaseCallback):
 
         # Track NOOP usage if the env provides noop_index in info (optional)
         # We can infer NOOP fraction from action_mask shape and the fact that NOOP is last index.
+        # if actions is not None and len(infos) > 0:
+        #     info0 = infos[0]
+        #     mask = info0.get("action_mask", None)
+        #     # mask is [R, K+1] from wrapper
+        #     if isinstance(mask, np.ndarray) and mask.ndim == 2:
+        #         R, Kp1 = mask.shape
+        #         noop_index = Kp1 - 1
+        #         a0 = actions[0] if isinstance(actions, (list, tuple, np.ndarray)) else actions
+        #         a0 = np.asarray(a0)
+        #         if a0.shape == (R,):
+        #             self._decision_steps += 1
+        #             self._noop_steps += int(np.sum(a0 == noop_index))
+        #             self.logger.record("policy/noop_fraction", float(self._noop_steps) / float(max(1, self._decision_steps * R)))
+                # Track NOOP usage ONLY on decision steps (otherwise PPO emits actions that env ignores)
         if actions is not None and len(infos) > 0:
-            info0 = infos[0]
-            mask = info0.get("action_mask", None)
-            # mask is [R, K+1] from wrapper
-            if isinstance(mask, np.ndarray) and mask.ndim == 2:
-                R, Kp1 = mask.shape
-                noop_index = Kp1 - 1
-                a0 = actions[0] if isinstance(actions, (list, tuple, np.ndarray)) else actions
-                a0 = np.asarray(a0)
-                if a0.shape == (R,):
-                    self._decision_steps += 1
-                    self._noop_steps += int(np.sum(a0 == noop_index))
-                    self.logger.record("policy/noop_fraction", float(self._noop_steps) / float(max(1, self._decision_steps * R)))
+            info0 = infos[0] if isinstance(infos, (list, tuple)) else infos
 
+            # Prefer meaningful_decision_step if available, else decision_step
+            is_decision = bool(info0.get("meaningful_decision_step", info0.get("decision_step", False)))
+
+            if is_decision:
+                mask = info0.get("action_mask", None)
+                if isinstance(mask, np.ndarray) and mask.ndim == 2:
+                    R, Kp1 = mask.shape
+                    noop_index = Kp1 - 1
+
+                    # VecEnv actions should be shape (n_envs, R); take env0
+                    a0 = np.asarray(actions)[0]
+                    a0 = np.asarray(a0).reshape(-1)  # ensure shape (R,)
+
+                    if a0.size == R:
+                        self._decision_steps += 1
+                        self._noop_steps += int(np.sum(a0 == noop_index))
+
+                        noop_frac = float(self._noop_steps) / float(max(1, self._decision_steps * R))
+                        self.logger.record("policy/noop_fraction", noop_frac)
         for info in infos:
             # log rew/*
             for k, v in info.items():
