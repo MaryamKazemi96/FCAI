@@ -1,52 +1,91 @@
-# Multi-Robot Task Allocation Project
+# FCAI — Multi-Robot Task Allocation with PPO + GNN (SB3)
 
-This project implements a multi-robot task allocation system using a centralized training and decentralized execution framework. The system is designed to efficiently manage tasks and agents in a shared environment, utilizing A* planning for pathfinding and reinforcement learning for decision-making.
+This repository implements a multi-robot task allocation environment (warehouse-style pickup & delivery) and trains a PPO agent with a GNN-based policy using Stable-Baselines3.
 
-## Features
+## What’s inside
 
-### Batch Release Times
-The system supports dynamic batch release times, allowing tasks to become available at different points during training:
-- Each batch of tasks has a release time (e.g., batch 0 at time 0, batch 1 at time 30, batch 2 at time 60, etc.)
-- Tasks become available only when the current time step reaches or exceeds their release time
-- The environment persists state across batch releases (robots maintain their capacity, position, etc.)
-- Episodes end when all tasks across all batches are completed or the maximum step count is reached
+- **Environment (base)**: `src/environment/environment.py`
+  - Discrete-time simulation with robots, tasks, pickups/deliveries, deadlines/obsolescence, and reward shaping.
+  - Uses an **assignment interval** (e.g., every 5 steps) to decide when new task assignments can be made.
 
-## Usage
+- **SB3 Wrapper**: `src/environment/sb3_env_wrapper.py`
+  - Converts the base environment into an SB3-compatible env.
+  - Action space is **MultiDiscrete**: one action per robot.
+  - Adds `info["action_mask"]`, `info["cand_task_ids"]`, reward component logs under `rew/*`, and decision-step flags.
 
-### Training with All Batches (Dynamic Release Times)
+- **Policy / Model**: `src/models/sb3_gnn_policy.py`
+  - GNN-based policy (e.g., GraphSAGE/GCN) for learning from robot/task graph observations.
 
-To train with all batches loaded at once with dynamic release times:
+- **Training Callback**: `src/utils/callbacks.py`
+  - Logs reward components (`rew/*`) and episode outcomes (completed/obsolete).
+  - Optionally logs meaningful decision-step policy behavior:
+    - `policy/noop_fraction_meaningful`
+    - `policy/assigned_fraction_meaningful`
+    - `policy/collision_drop_fraction_meaningful`
 
-```bash
-python3 main_all_batches.py \
-  --n-batches 10 \
-  --episodes 200 \
-  --data-dir data \
-  --save-dir checkpoints_all_batches
-```
+- **Evaluation & Plotting**
+  - `eval_ppo.py`: runs evaluation (deterministic + stochastic) and saves JSON results.
+  - `plot_evaluation.py`: generates per-seed and aggregate plots from eval JSON + TensorBoard logs.
 
-### Training with Individual Batches (Original Method)
+## Setup
 
-To train on individual batches separately:
-
-```bash
-python3 main_episodic.py \
-  --tasks data \
-  --episodes-per-batch 1000 \
-  --save-dir checkpoints
-```
-
-### Generating Data with Release Times
-
-Generate task batches with release times:
+Create a Python environment and install dependencies:
 
 ```bash
-python3 -m src.data_generation.generate_data \
-  --n-batches 10 \
-  --n-tasks 10 \
-  --n-robots 5 \
-  --release-interval 50 \
-  --output-dir data
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-This will create batch files with release times: batch 0 at time 0, batch 1 at time 50, batch 2 at time 100, etc.
+Make sure the data files exist:
+- `data/agents.npy`
+- `data/tasks_batch_0.npy`, `data/tasks_batch_1.npy`, ...
+
+## Configuration
+
+Training is controlled by `configs/training_config.yaml`. Key parameters:
+- `environment.assignment_interval`: how often assignment decisions are made
+- `ppo.n_steps`: rollout length per PPO update
+- `ppo.ent_coef`: entropy coefficient (exploration strength)
+
+## Train
+
+Run your training script (the repo’s training entrypoint) using the YAML config.
+
+TensorBoard logs and checkpoints are written under:
+- `checkpoints_ppo/seed_<seed>/tensorboard/`
+- `checkpoints_ppo/seed_<seed>/ppo_final.zip` (and periodic saves)
+
+## Evaluate (Deterministic vs Stochastic)
+
+After training, generate evaluation JSONs:
+
+```bash
+python3 eval_ppo.py --checkpoint-dir checkpoints_ppo --episodes 100
+```
+
+This writes per-seed:
+- `checkpoints_ppo/seed_<seed>/eval_results_deterministic.json`
+- `checkpoints_ppo/seed_<seed>/eval_results_stochastic.json`
+
+## Plot results
+
+Generate plots (evaluation + training curves):
+
+```bash
+python3 plot_evaluation.py --checkpoint-dir checkpoints_ppo
+```
+
+Outputs:
+- Per-seed plots: `checkpoints_ppo/seed_<seed>/eval_plots/`
+- Aggregate plots: `checkpoints_ppo/eval_plots/`
+
+## Notes / Common gotchas
+
+- **Decision steps vs non-decision steps**: actions only matter every `assignment_interval` steps; many metrics should be computed only on *meaningful* decision steps (tasks + available robots).
+- **NOOP action**: the last index in each robot’s discrete action head represents “no assignment”.
+- If `policy/*meaningful` TensorBoard tags are missing, ensure the wrapper inserts `action_mask` into `info` on every step.
+
+## License
+
+Add a license if you plan to distribute this code publicly.
