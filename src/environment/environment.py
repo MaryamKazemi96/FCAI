@@ -208,17 +208,6 @@ class Robot:
         att[4:4 + self.maxCapacity] = padded_task_ids
         return att
 
-    # def get_attribute_array(self):
-    #     coord_size = 3
-    #     other_f_sizes = 1 + self.maxCapacity
-    #     current_size = coord_size + other_f_sizes
-    #     if current_size > self.feature_size:
-    #         return False
-    #     att = np.zeros(self.feature_size)
-    #     att[:3] = self.coordinate
-    #     att[3] = self.capacity
-    #     att[4:current_size] = self.current_tasks_id
-    #     return att
     
 class Tasks_variable:
     def __init__(self, task_info_array, idle_allowance_time=60, init_time=0, feature_size=9):
@@ -704,14 +693,14 @@ class MultiTaskAllocationEnv(gym.Env):
         # -------------------------------------------------
         decision_step = (self.time_count % assignment_interval == 0)
         
-        # 🔥 NEW: Check if there are actually available tasks
+        # NEW: Check if there are actually available tasks
         available_tasks = self.get_available_task_ids()
         has_available_tasks = len(available_tasks) > 0
         
-        # 🔥 NEW: Check if any robot can accept tasks
+        # NEW: Check if any robot can accept tasks
         has_available_robots = any(r.capacity < r.maxCapacity for r in self.robots)
         
-        # 🔥 MODIFIED: Only mark as meaningful decision step if actions are possible
+        # MODIFIED: Only mark as meaningful decision step if actions are possible
         meaningful_decision_step = decision_step and has_available_tasks and has_available_robots
         
         if decision_step:
@@ -757,21 +746,11 @@ class MultiTaskAllocationEnv(gym.Env):
                 task.is_assigned = False
                 task.assigned_to = None
         # -------------------------------------------------
-        # print(available_tasks, 'available tasks in step')
-        # lines = []
-        # for ridx, robot in enumerate(self.robots):
-        #     tasks = []
-        #     for i, tid in enumerate(robot.current_tasks_id):
-        #         stage = robot.current_task_stage[i] if i < len(robot.current_task_stage) else "?"
-        #         goal = robot.goal_list[i] if i < len(robot.goal_list) else None
-        #         tasks.append((int(tid), stage, goal))
-        #     lines.append(
-        #         f"  R{ridx} cap={robot.capacity}/{robot.maxCapacity} tasks={tasks}"
-        #     )
-        # print("[DEBUG] Robot assignments:\n" + "\n".join(lines))
         # 3. COMPUTE REWARD
         # -------------------------------------------------
         reward, info_reward = self.reward(debug=True)
+        # print(info_reward, 'reward info in step')
+        # print(reward, 'reward in step')
         
         # -------------------------------------------------
         # 4. CHECK TERMINATION
@@ -780,166 +759,33 @@ class MultiTaskAllocationEnv(gym.Env):
             t.is_droppedoff or t.is_obsolete(self.time_count)
             for t in self.tasks
         ])
-        # is_obsolete = ([
-        #     t.is_obsolete(self.time_count)
-        #     for t in self.tasks
-        # ])
-        # is_droppedoff = ([
-        #     t.is_droppedoff
-        #     for t in self.tasks
-        # ])
-        
+
         truncated = self.time_count >= self.batch_time
         
         # -------------------------------------------------
         # 5. UPDATE OBSERVATIONS
         # -------------------------------------------------
-        # 🔥 MODIFIED: Only update on meaningful decision steps
-        # if meaningful_decision_step:
-        #     obs = self._get_observations(update_node_att=True)
-        #     self._cached_obs = obs
-        # else:
-        #     if not hasattr(self, "_cached_obs"):
-        #         obs = self._get_observations(update_node_att=True)
-        #         self._cached_obs = obs
-        #     else:
-        #         obs = self._cached_obs
         obs = self._get_observations(update_node_att=True)
     
         # -------------------------------------------------
         # 6. INCREMENT TIME AND RETURN
         # -------------------------------------------------
-        self.time_count += 1
+        
         
         info = {
             "resolved_assignments": final_assignments_for_step,
             "decision_step": decision_step,
-            "meaningful_decision_step": meaningful_decision_step,  # 🔥 NEW
+            "meaningful_decision_step": meaningful_decision_step,  
             "time_count": self.time_count,
-            "available_tasks": len(available_tasks),  # 🔥 NEW
-            "available_robots": sum(1 for r in self.robots if r.capacity < r.maxCapacity)  # 🔥 NEW
+            "available_tasks": len(available_tasks),  
+            "available_robots": sum(1 for r in self.robots if r.capacity < r.maxCapacity)  # 
         }
-        # print(final_assignments_for_step)
+        # print(info, 'info in step')
+        # print('final_assignments_for_step', final_assignments_for_step)
         # print(f"Step {self.time_count} | Reward: {reward} | Terminated: {terminated} | is_obsolete: {is_obsolete}|| is_droppedoff: {is_droppedoff}||Truncated: {truncated} | Info: {info}")
-        
-        return obs, reward, terminated, truncated, info_reward, info
-
-    def stepOld_working(self, list_t2r_assignments=None, assignment_interval=5):
-        # print(f"\n=== Step {self.time_count} ===")
-        # ensure we always have a dict to report which assignments were applied this step
-        final_assignments_for_step = {}
-        for ridx, robot in enumerate(self.robots):
-            if len(robot.trajectory) > 0:
-                coord, reached = robot.move()
-                reached_pick, reached_drop = reached
-            else:
-                reached_pick, reached_drop = robot._task_reached()
-
-            # Handle pickups
-            for task_id in reached_pick:
-                # map task identifier to task object (see mapping strategy below)
-                task = self._get_task_from_assignment_id(task_id)
-                if task is not None:
-                    # print(f"Robot {robot.robot_id} or {ridx} picked up task {task.id} at step {self.time_count}")
-                    # record which robot picked it up
-                    task.picked_by = ridx
-                    # try:
-                    #     task.picked_by = robot.robot_id
-                    # except Exception:
-                    #     task.picked_by = ridx
-
-                    # call object's picked_up() to flip flags and update coord
-                    task.picked_up()
-                    # allow reward() to grant pickup reward once
-                    task.pickup_reward_given = False
-                    # task.is_assigned = True
-
-            # Handle drop-offsdef st
-            for task_id in reached_drop:
-                task = self._get_task_from_assignment_id(task_id)
-                if task is not None:
-                    # print(f"Robot {robot.robot_id} or {ridx} dropped off task {task.id} at step {self.time_count}")
-                 # record which robot delivered this task so rewards can attribute properly
-                    # robot here is the variable from the per-robot loop (same scope)
-                    task.delivered_by = ridx
-                    # try:
-                    #     task.delivered_by = robot.robot_id
-                    # except Exception:
-                    #     # fall back to index if robot.robot_id not set
-                    #     task.delivered_by = ridx
-                    task.drop_off()
-                    # allow reward() to grant delivery reward once
-                    task.delivered_reward_given = False
-                    # mark task no longer assigned (optional)
-                    # task.is_assigned = False
-            
-            # After pickups or dropoffs, replan if needed (centralized place)
-            if robot.needs_replan or (len(robot.trajectory) == 0 and robot.goal_list):
-                full_trajectory = self._plan_robot_trajectory(robot)
-                if full_trajectory:
-                    robot.assign_trajectory(full_trajectory)
-                # clear the replan flag even if planning failed; we'll retry next step if needed
-                robot.needs_replan = False
-
-        if self.time_count % assignment_interval == 0:
-            # print(f"\n--- Assignment at Step {self.time_count} ---")
-            
-            # self.update_nodes_attr()
-            # self.update_graph()
-
-            # print(f"Step {self.time_count}: Running assignment")
-            if list_t2r_assignments is None:
-                list_t2r_assignments = {}
-                available_tasks = self.get_available_task_ids()
-                # print([t.id for t in available_tasks], "unassigned tasks before assignment")
-                # print(available_tasks, "available tasks before assignment")
-                for rid in range(self.n_robots):
-                    if not available_tasks:
-                        list_t2r_assignments[rid] = [None, None]
-                        continue
-
-                    top2 = np.random.choice(
-                        available_tasks,
-                        size=min(2, len(available_tasks)),
-                        replace=False
-                    ).tolist()
-
-                    if len(top2) == 1:
-                        top2.append(top2[0])
-
-                    list_t2r_assignments[rid] = top2
-
-            # print("Assignments before conflict resolution:", list_t2r_assignments)
-            # print(f"\n=== Step {self.time_count} Assignment proposals (per robot) ===")
-            # for rid in sorted(list_t2r_assignments.keys()):
-            #     print(f"  R{rid}: {list_t2r_assignments[rid]}")
-
-            # show available task count
-            available_tasks = self.get_available_task_ids()
-            # print(f"  Available tasks count: {len(available_tasks)} -> ids sample: {available_tasks[:20]}")
-
-            # Resolve conflicts using top-2 list ---
-            resolved_assignments = self.resolve_conflicts(list_t2r_assignments)
-            # print("Assignments after conflict resolution:", resolved_assignments)
-            self._get_final_assigment(resolved_assignments)
-            # after assignment application (one-shot or iterative)
-            final_assignments_for_step = resolved_assignments.copy() if 'resolved_assignments' in locals() else {}
-            # if you implemented iterative assignment, you can accumulate all applied assignments into this dict
-            # print(list_t2r_assignments, 'list_t2r_assignments in step')
-        # 4Compute reward
-        reward, info_reward = self.reward(debug=False)
-        # terminated = all([not t.is_active for t in self.tasks])
-        # Terminate only when all tasks are either dropped off or obsolete
-        terminated = all([t.is_droppedoff or t.is_obsolete(self.time_count) for t in self.tasks])
-        # print(f"Terminated: id dropedoff, is obsolete, is_assigned, is picked up {[[t.is_droppedoff , t.is_obsolete(self.time_count), t.is_assigned, t.is_pickedup] for t in self.tasks]}")
-
-        truncated = self.time_count >= self.batch_time
-        # print(self.attributes_matrix.shape, 'attributes matrix shape in step')
-        obs = self._get_observations(update_node_att=True)  # graph already updated
-        # print(self.attributes_matrix.shape, 'attributes matrix shape after get observations in step')
         self.time_count += 1
-        info = {"resolved_assignments": final_assignments_for_step}
         return obs, reward, terminated, truncated, info_reward, info
+
 
     def _get_task_from_assignment_id(self, task_identifier):
         """
@@ -1015,82 +861,6 @@ class MultiTaskAllocationEnv(gym.Env):
             robot.needs_replan = True
         # print(f"Task {task.id}, is_assigned: {task.is_assigned} in get_final_assignment")
     
-    def _get_final_assigment2(self, list_t2r_assignments):
-
-        for rid, task_id in list_t2r_assignments.items():
-            # print(list_t2r_assignments, 'assignments in final assignment')
-            robot = self.robots[rid]
-
-            # Skip if robot is at max capacity
-            if robot.capacity >= robot.maxCapacity:
-                continue
-
-            task_idx = task_id - len(self.robots_id)
-            # print(task_idx, task_id, len(self.robots_id),'task idx and task_id in final assignment')
-            # print(len(self.robots_id), 'len robots id in final assignment')
-            if task_idx < 0 or task_idx >= len(self.tasks):
-                continue
-            task = self.tasks[task_idx]
-            if not task.is_active:
-                continue
-
-            # Add task to robot's goal list
-            success = robot.add_task(task_id, task.pick_up_coord, task.drop_off_coord)
-            if not success:
-                continue
-            # Mark as assigned
-            task.is_assigned = True
-
-            # Reorder goals based on distance
-            robot.reorder_goals_by_distance()
-
-            # Plan trajectory to first goal in goal_list
-            full_trajectory = []
-            start = (int(robot.coordinate[0]), int(robot.coordinate[1]))
-            for goal in robot.goal_list:
-                end = (int(goal[0]), int(goal[1]))
-                found, traj = self.planner.get_plan(start, end)
-                if found and traj is not None:
-                    full_trajectory.extend(traj)
-                    start = end
-            robot.assign_trajectoryrewards(full_trajectory)
-            # print(f"Robot {rid} assigned tasks {robot.current_tasks_id}, trajectory length {len(robot.trajectory)}")
-    
-    
-    def _get_final_assigmentOld(self, list_t2r_assignments):
-        # print(list_t2r_assignments, 'list_t2r_assignments in final assignment')
-        # for robot_ids, task_id in list_t2r_assignments.items():
-            # print(f"Task {task_id} assigned to robots {robot_ids}")
-        # print()
-        assignments = [
-        (task_id, rid)
-        for task_id, robot_ids in list_t2r_assignments.items()
-        for rid in (robot_ids if isinstance(robot_ids, (list, set)) else [robot_ids])  # Ensure robot_ids is iterable
-    ]
-        for rid , task_id in assignments:
-            # robot_idx = list(self.robots_id).index(rid)
-            # robot_idx = int(self.robots_id[rid])
-            # print(robot_idx, 'robot_idx')
-            # robot = self.robots[robot_idx]
-            robot = self.robots[rid]
-
-            # task_idx = list(self.tasks_id).index(task_id)
-            # task = self.tasks[task_idx]
-            task = self.tasks[task_id-len(self.robots_id)]
-            robot.add_task(task_id, task.pick_up_coord, task.drop_off_coord)
-            # print(robot.coordinate[0][:2], 'robot.coordinate')
-            # print(task.pick_up_coord[:2], 'task.pick_up_coord')
-            # self.current_traj[robot_idx] 
-            # print(robot.coordinate[0][:2], task.pick_up_coord[:2], 'robot and task coord in final assignment')
-            # print(robot.coordinate, task.coordinate, 'robot and task coord int in final assignment')
-            found,trajectory= self.planner.get_plan(start=(int(robot.coordinate[0]),int(robot.coordinate[1]))
-                                                                 , end=(int(task.pick_up_coord[0]), int(task.pick_up_coord[1])))
-            # print(f"Planning trajectory for robot {rid} to task {task_id}: Found={found}")
-            if trajectory is None:
-                robot.trajectory = []
-            else:                
-                robot.assign_trajectory(trajectory)
-        # print(f"Assigned trajectory to robot {rid}: {trajectory}")
     def _reward_tasks_completion_per_robot(self, robot):
         """
         Count tasks delivered by this robot (uses task.delivered_by set at dropoff).
@@ -1165,324 +935,17 @@ class MultiTaskAllocationEnv(gym.Env):
                 "pickups_this_step": pickup_count,
                 "deliveries_this_step": delivery_count,
                 "obsolete_this_step": obsolete_count,
-                "step_penalty": STEP_PENALTY,
-                "R_PICKUP": R_PICKUP,
-                "R_DELIVERY": R_DELIVERY,
-                "P_OBSOLETE": P_OBSOLETE,
+                # "step_penalty": STEP_PENALTY,
+                # "R_PICKUP": R_PICKUP,
+                # "R_DELIVERY": R_DELIVERY,
+                # "P_OBSOLETE": P_OBSOLETE,
                 "robot_capacities": [r.capacity for r in self.robots],
             }
             return rewards, info
 
         return rewards
 
-    def rewardOld(self, debug=False):
-        """Reward focused on actual task completion, not just activity."""
-        n_robots = max(1, len(self.robots))
-        
-        # INCREASED: Make sparse rewards dominant
-        pickup_reward = 1.0              # Was 1.0 → 5x bigger
-        completion_reward_per_task = 2.0  # Was 5.0 → 4x bigger
-        obsolete_penalty_amount = -1.0    # Was -4.0 → stronger penalty
-        new_assignment_bonus = 0.2        # Was 2.0 → smaller (assignment doesn't mean success)
-        
-        # REDUCED: Make dense rewards tiny (just for breaking ties)
-        progress_reward = 0.001          # Was 0.1 → 100x smaller!
-        idle_penalty = -0.001            # Was -0.05 → 50x smaller
-        capacity_utilization_bonus = 0.001  # Was 0.2 → 200x smaller!
-        urgency_bonus = 0.01             # Was 0.5 → 50x smaller
-        
-        rewards = {rid: 0.0 for rid in range(n_robots)}
-        
-        pickup_count = 0
-        delivery_count = 0
-        obsolete_count = 0
-        new_assignments = 0
 
-        # ========== SPARSE REWARDS (Main signal) ==========
-        # One-time pickup rewards
-        for task in self.tasks:
-            if task.is_pickedup and (not getattr(task, "pickup_reward_given", False)):
-                pid = getattr(task, "picked_by", None) or getattr(task, "assigned_to", None)
-                if pid is not None and 0 <= pid < n_robots:
-                    rewards[pid] += pickup_reward
-                    pickup_count += 1
-                task.pickup_reward_given = True
-
-        # One-time delivery rewards
-        for task in self.tasks:
-            if task.is_droppedoff and (not getattr(task, "delivered_reward_given", False)):
-                did = getattr(task, "delivered_by", None)
-                if did is not None and 0 <= did < n_robots:
-                    rewards[did] += completion_reward_per_task
-                    delivery_count += 1
-                task.delivered_reward_given = True
-
-        # One-time obsolete penalty
-        for task in self.tasks:
-            if (not task.is_pickedup) and task.is_assigned and task.is_obsolete(self.time_count):
-                if not getattr(task, "obsolete_penalty_given", False):
-                    assigned = getattr(task, "assigned_to", None)
-                    if assigned is None:
-                        for rid, robot in enumerate(self.robots):
-                            if task.id in robot.current_tasks_id:
-                                assigned = robot.robot_id if hasattr(robot, "robot_id") else rid
-                                break
-                    if assigned is not None and 0 <= assigned < n_robots:
-                        rewards[assigned] += obsolete_penalty_amount
-                        obsolete_count += 1
-                    task.obsolete_penalty_given = True
-                    task.is_assigned = False
-
-        # Assignment reward
-        for task in self.tasks:
-            if (task.is_assigned and 
-                not getattr(task, "assignment_bonus_given", False) and
-                task.assigned_to is not None):
-                rewards[task.assigned_to] += new_assignment_bonus
-                new_assignments += 1
-                task.assignment_bonus_given = True
-
-        # TINY dense rewards (just for tie-breaking, not dominating)
-        for rid, robot in enumerate(self.robots):
-            if len(robot.trajectory) > 0 or len(robot.goal_list) > 0:
-                rewards[rid] += progress_reward * len(robot.current_tasks_id)
-            elif len(self.get_available_task_ids()) > 0:
-                rewards[rid] += idle_penalty
-            rewards[rid] += capacity_utilization_bonus * len(robot.current_tasks_id)
-        
-        # Tiny urgency bonus
-        for task in self.tasks:
-            if task.is_assigned and not task.is_pickedup:
-                time_to_obsolete = task.ddl_pick - self.time_count
-                if time_to_obsolete < 10 and time_to_obsolete > 0:
-                    assigned_robot = task.assigned_to
-                    if assigned_robot is not None and 0 <= assigned_robot < n_robots:
-                        rewards[assigned_robot] += urgency_bonus
-
-        if debug:
-            non_zero_rewards = sum(1 for r in rewards.values() if abs(r) > 0.01)
-            
-            info = {
-                "sum_rewards": sum(rewards.values()),
-                "non_zero_rewards": non_zero_rewards,
-                "pickup_reward": pickup_reward,
-                "completion_reward": completion_reward_per_task,
-                "obsolete_penalty_amount": obsolete_penalty_amount,
-                "n_robots": n_robots,
-                "abandoned_count": sum(1 for t in self.tasks if t.is_obsolete(self.time_count) and not t.is_pickedup),
-                "available_tasks": len(self.get_available_task_ids()),
-                # Event counts
-                "pickups_this_step": pickup_count,
-                "deliveries_this_step": delivery_count,
-                "obsolete_this_step": obsolete_count,
-                "new_assignments_this_step": new_assignments,
-                # Robot states
-                "rewards_per_robot": {rid: r for rid, r in rewards.items()},
-                "robot_capacities": [r.capacity for r in self.robots],
-                "robots_with_tasks": sum(1 for r in self.robots if r.capacity > 0),
-            }
-            return rewards, info
-
-        return rewards
-    def reward_lessSparse(self, debug=False):
-        """Enhanced reward with dense signals."""
-        n_robots = max(1, len(self.robots))
-        
-        # Sparse main rewards (keep these)
-        pickup_reward = 1.0
-        completion_reward_per_task = 5.0
-        obsolete_penalty_amount = -4.0
-        new_assignment_bonus = 2.0
-    
-        # 🔥 NEW: Dense shaping rewards
-        progress_reward = 0.1          # Per step when moving toward task
-        idle_penalty = -0.05            # Per step when robot is idle
-        capacity_utilization_bonus = 0.2  # Per step for each task held
-        
-        rewards = {rid: 0.0 for rid in range(n_robots)}
-        
-        pickup_count = 0
-        delivery_count = 0
-        obsolete_count = 0
-        new_assignments = 0
-        progress_events = 0
-
-        # ========== MAIN EVENTS ==========
-        # One-time pickup rewards
-        for task in self.tasks:
-            if task.is_pickedup and (not getattr(task, "pickup_reward_given", False)):
-                # pid = getattr(task, "picked_by", None) or getattr(task, "assigned_to", None)
-                pid = getattr(task, "picked_by", None)
-                if pid is None:
-                    pid = getattr(task, "assigned_to", None)
-                if pid is not None and 0 <= pid < n_robots:
-                    rewards[pid] += pickup_reward
-                    pickup_count += 1
-                task.pickup_reward_given = True
-
-        # One-time delivery rewards
-        for task in self.tasks:
-            if task.is_droppedoff and (not getattr(task, "delivered_reward_given", False)):
-                did = getattr(task, "delivered_by", None)
-                if did is not None and 0 <= did < n_robots:
-                    rewards[did] += completion_reward_per_task
-                    delivery_count += 1
-                task.delivered_reward_given = True
-
-        # One-time obsolete penalty
-        for task in self.tasks:
-            if (not task.is_pickedup) and task.is_assigned and task.is_obsolete(self.time_count):
-                if not getattr(task, "obsolete_penalty_given", False):
-                    assigned = getattr(task, "assigned_to", None)
-                    if assigned is None:
-                        for rid, robot in enumerate(self.robots):
-                            if task.id in robot.current_tasks_id:
-                                assigned = robot.robot_id if hasattr(robot, "robot_id") else rid
-                                break
-                    if assigned is not None and 0 <= assigned < n_robots:
-                        rewards[assigned] += obsolete_penalty_amount
-                        obsolete_count += 1
-                    task.obsolete_penalty_given = True
-                    task.is_assigned = False
-
-        # Assignment reward
-        for task in self.tasks:
-            # Check if task was just assigned this step
-            if (task.is_assigned and 
-                not getattr(task, "assignment_bonus_given", False) and
-                task.assigned_to is not None):
-                
-                rewards[task.assigned_to] += new_assignment_bonus
-                new_assignments += 1
-                task.assignment_bonus_given = True
-
-        # 🔥 NEW: Add dense rewards EVERY STEP
-        for rid, robot in enumerate(self.robots):
-            # Reward for making progress (has tasks and trajectory/goals)
-            if len(robot.trajectory) > 0 or len(robot.goal_list) > 0:
-                rewards[rid] += progress_reward * len(robot.current_tasks_id)
-            
-            # Penalty for being idle when tasks are available
-            elif len(self.get_available_task_ids()) > 0:
-                rewards[rid] += idle_penalty
-            
-            # Bonus for capacity utilization
-            rewards[rid] += capacity_utilization_bonus * len(robot.current_tasks_id)
-    
-        # 🔥 NEW: Time-based urgency (FIXED - use ddl_pick instead of deadline)
-        for task in self.tasks:
-            if task.is_assigned and not task.is_pickedup:
-                time_to_obsolete = task.ddl_pick - self.time_count  # ← FIXED: use ddl_pick
-                if time_to_obsolete < 10 and time_to_obsolete > 0:  # Urgency!
-                    assigned_robot = task.assigned_to
-                    if assigned_robot is not None and 0 <= assigned_robot < n_robots:
-                        rewards[assigned_robot] += 0.5  # Urgency bonus
-
-        if debug:
-            non_zero_rewards = sum(1 for r in rewards.values() if abs(r) > 0.01)
-            
-            info = {
-                "sum_rewards": sum(rewards.values()),
-                "non_zero_rewards": non_zero_rewards,
-                "pickup_reward": pickup_reward,
-                "completion_reward": completion_reward_per_task,
-                "obsolete_penalty_amount": obsolete_penalty_amount,
-                "n_robots": n_robots,
-                "abandoned_count": sum(1 for t in self.tasks if t.is_obsolete(self.time_count) and not t.is_pickedup),
-                "available_tasks": len(self.get_available_task_ids()),
-                # Event counts
-                "pickups_this_step": pickup_count,
-                "deliveries_this_step": delivery_count,
-                "obsolete_this_step": obsolete_count,
-                "new_assignments_this_step": new_assignments,
-                "progress_events_this_step": progress_events,
-                # Robot states
-                "rewards_per_robot": {rid: r for rid, r in rewards.items()},
-                "robot_capacities": [r.capacity for r in self.robots],
-                "robots_with_tasks": sum(1 for r in self.robots if r.capacity > 0),
-            }
-            return rewards, info
-
-        return rewards
-    
-    def rewardOld_working(self, debug=False):
-        """
-        One-time-event reward function.
-
-        - pickup_reward: one-time (+1) awarded to robot that actually picked the task.
-        - completion_reward_per_task: one-time (+20) awarded to delivering robot when drop_off() occurs.
-        - obsolete_penalty: one-time (-2) awarded to the robot the task was assigned to if it becomes obsolete while assigned.
-        - step_penalty_per_robot: small per-step penalty (optional, set to 0 to disable).
-
-        This function mutates task flags (pickup_reward_given / delivered_reward_given /
-        obsolete_penalty_given) so each event is only paid once.
-        """
-        n_robots = max(1, len(self.robots))
-
-        # Tunable constants
-        pickup_reward = 1.0
-        completion_reward_per_task = 5
-        obsolete_penalty_amount = -5.0
-        step_penalty_per_robot = -0.02  # set to 0.0 if you don't want any per-step penalty
-
-        # Initialize per-robot rewards
-        rewards = {rid: 0.0 for rid in range(n_robots)}
-
-        # 1) One-time pickup rewards
-        for task in self.tasks:
-            if task.is_pickedup and (not getattr(task, "pickup_reward_given", False)):
-                pid = getattr(task, "picked_by", None) or getattr(task, "assigned_to", None)
-                if pid is not None and 0 <= pid < n_robots:
-                    rewards[pid] += pickup_reward
-                task.pickup_reward_given = True
-
-        # 2) One-time delivery rewards
-        for task in self.tasks:
-            if task.is_droppedoff and (not getattr(task, "delivered_reward_given", False)):
-                did = getattr(task, "delivered_by", None)
-                if did is not None and 0 <= did < n_robots:
-                    rewards[did] += completion_reward_per_task
-                task.delivered_reward_given = True
-
-        # 3) One-time obsolete penalty (apply only if task was assigned and not picked up)
-        for task in self.tasks:
-            if (not task.is_pickedup) and task.is_assigned and task.is_obsolete(self.time_count):
-                if not getattr(task, "obsolete_penalty_given", False):
-                    assigned = getattr(task, "assigned_to", None)
-                    if assigned is None:
-                        # fallback: try to find robot that had this task in its list
-                        for rid, robot in enumerate(self.robots):
-                            if task.id in robot.current_tasks_id:
-                                assigned = robot.robot_id if hasattr(robot, "robot_id") else rid
-                                break
-                    if assigned is not None and 0 <= assigned < n_robots:
-                        rewards[assigned] += obsolete_penalty_amount
-                    task.obsolete_penalty_given = True
-                    # Optionally clear is_assigned so it doesn't appear in future assignment lists
-                    task.is_assigned = False
-
-        # 4) Small per-step penalty if you want to encourage speed
-        if step_penalty_per_robot != 0.0:
-            for rid in range(n_robots):
-                rewards[rid] += step_penalty_per_robot
-
-        if debug:
-            info = {
-                "sum_rewards": sum(rewards.values()),
-                "pickup_reward": pickup_reward,
-                "completion_reward": completion_reward_per_task,
-                "obsolete_penalty_amount": obsolete_penalty_amount,
-                "step_penalty_per_robot": step_penalty_per_robot,
-                "n_robots": n_robots,
-                "abandoned_count": sum(1 for t in self.tasks if t.is_obsolete(self.time_count) and not t.is_pickedup)
-            }
-            return rewards, info
-
-        return rewards
-    
-
-    # def _reward_tasks_completion(self):s
-    #     return sum([1 for t in self.tasks if t.is_droppedoff])
     def _reward_tasks_completion_per_robot(self, robot):
         # Count tasks completed by this robot
         completed_task_ids = set(robot.current_tasks_id)
