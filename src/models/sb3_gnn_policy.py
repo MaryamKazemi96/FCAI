@@ -76,7 +76,7 @@ class RTGNNPolicy(ActorCriticPolicy):
         dropout: float = 0.0,
         noop_init: float = -1.0,
         noop_frozen: bool = False, #True
-        logit_temperature: float = 1.0, #5.0,
+        logit_temperature: float = 5.0, #5.0,
         
         *args,
         **kwargs,

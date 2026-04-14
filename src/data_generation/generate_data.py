@@ -129,12 +129,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate batch data with release times for multi-robot task allocation"
     )
-    parser.add_argument("--n-batches", type=int, default=5,
+    parser.add_argument("--n-batches", type=int, default=10,
                         help="Number of batches to generate (default: 10)")
-    parser.add_argument("--n-tasks", type=int, default=8,
-                        help="Number of tasks per batch (default: 10)")
-    parser.add_argument("--n-robots", type=int, default=5,
-                        help="Number of robots/agents (default: 5)")
+    parser.add_argument("--n-tasks", type=int, default=4,
+                        help="Number of tasks per batch (default: 4)")
+    parser.add_argument("--n-robots", type=int, default=6,
+                        help="Number of robots/agents (default: 6)")
     parser.add_argument("--release-interval", type=int, default=50,
                         help="Time interval between batch releases (default: 30)")
     parser.add_argument("--output-dir", type=str, default=None,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     y_min, y_max = params['y_min'], params['y_max']
     map_resolution = params['map_resolution']
     Planning_resolution = params['Planning_resolution']
-    max_waiting_time = 30
+    max_waiting_time = 120
     max_travel_delay_percentage = 2
 
     # Initialize planner (expects Planner to load map from env/ATC_wed.yaml)
