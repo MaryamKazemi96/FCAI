@@ -723,7 +723,6 @@ def main() -> None:
 
     all_det: List[Dict] = []
     all_stoch: List[Dict] = []
-
     for seed, seed_dir in seed_dirs:
         if not seed_dir.exists():
             continue
