@@ -74,9 +74,9 @@ class RTGNNPolicy(ActorCriticPolicy):
         num_gnn_layers: int = 2,
         activation: str = "relu",
         dropout: float = 0.0,
-        noop_init: float = -1.0,
+        noop_init: float = 0.0,
         noop_frozen: bool = False, #True
-        logit_temperature: float = 5.0, #5.0,
+        logit_temperature: float = 1.0, #5.0,
         
         *args,
         **kwargs,
@@ -142,9 +142,49 @@ class RTGNNPolicy(ActorCriticPolicy):
 
             if len(new_params) > 0:
                 self.optimizer.add_param_group({"params": new_params})
+                # Debug buffer: latest per-action logit means (computed on meaningful steps only in callback)
+        # Keys like: action_0_mean, action_1_mean, ..., action_noop_mean
+        self.last_action_logit_means: Dict[str, float] = {}
 
     # ---------------- helpers ----------------
+    @th.no_grad()
+    def _stash_action_logit_means(self, logits: th.Tensor, mask_full: th.Tensor) -> None:
+        """
+        logits: [B, R, K+1] already masked with -1e9 for invalid
+        mask_full: [B, R, K+1] bool (True=valid)
+        Stores per-action mean logits into self.last_action_logit_means.
+        """
+        try:
+            x = logits.detach()
+            m = mask_full.detach()
 
+            if m.dtype != th.bool:
+                m = m.bool()
+
+            # Only consider "active" robots: at least one valid non-NOOP action
+            active = m[..., :-1].any(dim=-1)  # [B, R]
+            active3 = active.unsqueeze(-1).expand_as(x)  # [B, R, K+1]
+
+            valid = m & active3  # [B, R, K+1]
+            if not valid.any():
+                self.last_action_logit_means = {}
+                return
+
+            out: Dict[str, float] = {}
+            Kp1 = x.shape[-1]
+            for a in range(Kp1):
+                va = valid[..., a]
+                if va.any():
+                    out[f"action_{a}_mean"] = float(x[..., a][va].mean().cpu().item())
+
+            # Convenience alias for NOOP
+            out["noop_mean"] = out.get(f"action_{self.noop_index}_mean", float(self.noop_logit.detach().cpu().item()))
+
+            self.last_action_logit_means = out
+        except Exception:
+            # Never break training because of debug logging
+            self.last_action_logit_means = {}
+            return
     def _append_noop(self, logits_k: th.Tensor) -> th.Tensor:
         """
         logits_k: [B,R,K]
@@ -211,7 +251,8 @@ class RTGNNPolicy(ActorCriticPolicy):
         if mask_full.dtype != th.bool:
             mask_full = mask_full.bool()
         logits = logits.masked_fill(~mask_full, -1e9)
-
+        # stash per-action logit means for TensorBoard (callback will read these)
+        self._stash_action_logit_means(logits, mask_full)
         # active robots = those with at least one valid candidate slot (exclude NOOP)
         active = mask_full[..., :-1].any(dim=-1)
 

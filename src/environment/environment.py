@@ -238,7 +238,7 @@ class Tasks_variable:
         return current_time >= self.release_time
 
     def is_obsolete(self, current_time=0):
-        if (not self.is_pickedup) and (current_time > self.ddl_pick *1.5 ):
+        if (not self.is_pickedup) and (current_time > self.ddl_pick * 1.5 ):
             return 1
         # if picked up but dropoff deadline passed and still not dropped
         if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff *1.5):

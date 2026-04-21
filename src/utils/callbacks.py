@@ -10,6 +10,8 @@ import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from pathlib import Path
 import json
+from typing import Any, Dict
+import torch as th
 
 
 class FinalTaskAllocationCallback(BaseCallback):
@@ -44,6 +46,70 @@ class FinalTaskAllocationCallback(BaseCallback):
 
             # Only compute these stats when decisions actually matter
             if is_meaningful:
+                # --- log per-action mean logits (from policy) ---
+                pol = getattr(self.model, "policy", None)
+                means = getattr(pol, "last_action_logit_means", None)# --- NEW: logit separation metrics (need current obs + policy forward) ---
+                try:
+                    pol = getattr(self.model, "policy", None)
+
+                    # Try to get latest obs dict from SB3 locals
+                    obs_any = self.locals.get("new_obs", None)
+                    if obs_any is None:
+                        obs_any = self.locals.get("obs", None)
+
+                    # VecEnv => obs is typically a dict of arrays with leading dim n_envs
+                    if pol is not None and isinstance(obs_any, dict):
+                        # take env0
+                        # obs0 = {k: v[0] for k, v in obs_any.items()}
+
+                        # # convert to torch tensors on correct device
+                        # obs_t = {
+                        #     k: th.as_tensor(v, device=pol.device)
+                        #     for k, v in obs0.items()
+                        # }
+
+                        # # get masked logits directly
+                        # logits_t, _values_t, _active_t = pol._masked_logits_and_value(obs_t)  # [1,R,K+1]
+                        
+                        obs0 = {k: v[0] for k, v in obs_any.items()}  # env0
+
+                        obs_t = {}
+                        for k, v in obs0.items():
+                            t = th.as_tensor(v, device=pol.device)
+
+                            # Add batch dim (B=1) to match RTGNNPolicy expectations
+                            # edge_index should be [B,2,E]
+                            if k == "edge_index":
+                                if t.ndim == 2:
+                                    t = t.unsqueeze(0)
+                            else:
+                                if t.ndim >= 1:
+                                    t = t.unsqueeze(0)
+
+                            obs_t[k] = t
+
+                        logits_t, _values_t, _active_t = pol._masked_logits_and_value(obs_t)  # [1,R,K+1]
+                        logits_np = logits_t.detach().cpu().numpy()[0]  # [R,K+1]
+                        logits_np = logits_t.detach().cpu().numpy()[0]  # [R,K+1]
+
+                        mask = info0.get("action_mask", None)
+                        if isinstance(mask, np.ndarray) and mask.ndim == 2:
+                            R, Kp1 = mask.shape
+                            noop_index = Kp1 - 1
+                            stats = self._logit_separation_stats(
+                                logits=logits_np,
+                                mask=mask,
+                                noop_index=noop_index,
+                            )
+                            for k, v in stats.items():
+                                if isinstance(v, (int, float, np.number)) and np.isfinite(v):
+                                    self.logger.record(f"logits/{k}", float(v))
+                except Exception:
+                    pass
+                if isinstance(means, dict) and means:
+                    for k, v in means.items():
+                        if isinstance(v, (int, float, np.number)):
+                            self.logger.record(f"logits/{k}", float(v))
                 mask = info0.get("action_mask", None)
                 # mask should be [R, K+1] and NOOP is last index
                 if isinstance(mask, np.ndarray) and mask.ndim == 2:
@@ -107,7 +173,7 @@ class FinalTaskAllocationCallback(BaseCallback):
 
                 self.logger.record("task/completed", completed)
                 self.logger.record("task/obsolete", obsolete)
-                self.logger.record("task/completion_rate", 100 * completed / 24)
+                self.logger.record("task/completion_rate", 100 * completed / 40)
 
                 for k, s in self._ep_rew_sums.items():
                     self.logger.record(f"{k}_episode_sum", float(s))
@@ -115,7 +181,7 @@ class FinalTaskAllocationCallback(BaseCallback):
 
                 if self.verbose > 0 and self.episode_count % 10 == 0:
                     recent = min(10, len(self.episode_completions))
-                    print(f"\n[Episode {self.episode_count}] Completed: {completed}/24, Obsolete: {obsolete}")
+                    print(f"\n[Episode {self.episode_count}] Completed: {completed}/40, Obsolete: {obsolete}")
                     print(f"  Last {recent} avg: {np.mean(self.episode_completions[-recent:]):.1f} completed")
 
         # Save periodically
@@ -123,7 +189,69 @@ class FinalTaskAllocationCallback(BaseCallback):
             self._save_metrics()
 
         return True
+    @staticmethod
+    def _logit_separation_stats(
+        logits: np.ndarray,  # [R, K+1]
+        mask: np.ndarray,    # [R, K+1] bool or 0/1
+        noop_index: int,
+    ) -> Dict[str, float]:
+        """
+        Compute per-robot best/2nd-best task logits and gaps, then average across robots
+        that have at least one valid task (excluding NOOP).
+        """
+        m = mask.astype(bool)
+        R, Kp1 = logits.shape
 
+        # valid tasks exclude noop
+        valid_tasks = m.copy()
+        valid_tasks[:, noop_index] = False
+
+        # active robots: at least one valid task
+        active = valid_tasks.any(axis=1)
+        if not np.any(active):
+            return {}
+
+        # Mask invalid task logits to -inf so max works
+        task_logits = logits[:, :].copy()
+        task_logits[~valid_tasks] = -np.inf
+
+        # best task per robot
+        best = np.max(task_logits, axis=1)
+
+        # second best: set best index to -inf and max again
+        best_idx = np.argmax(task_logits, axis=1)
+        task_logits2 = task_logits.copy()
+        for r in range(R):
+            task_logits2[r, best_idx[r]] = -np.inf
+        second = np.max(task_logits2, axis=1)
+
+        noop = logits[:, noop_index]
+
+        # filter active and finite
+        a = active & np.isfinite(best)
+        if not np.any(a):
+            return {}
+
+        best_a = best[a]
+        second_a = second[a]
+        noop_a = noop[a]
+
+        # if second is -inf (only 1 valid task), ignore those in best-second gap
+        finite_second = np.isfinite(second_a)
+
+        out: Dict[str, float] = {}
+        out["max_task_logit_mean"] = float(np.mean(best_a))
+        out["noop_logit_mean"] = float(np.mean(noop_a))
+        out["gap_best_minus_noop_mean"] = float(np.mean(best_a - noop_a))
+
+        if np.any(finite_second):
+            out["second_best_task_logit_mean"] = float(np.mean(second_a[finite_second]))
+            out["gap_best_minus_second_mean"] = float(np.mean(best_a[finite_second] - second_a[finite_second]))
+        else:
+            out["second_best_task_logit_mean"] = float("nan")
+            out["gap_best_minus_second_mean"] = float("nan")
+
+        return out
     def _save_metrics(self):
         metrics = {
             "episode_completions": self.episode_completions,

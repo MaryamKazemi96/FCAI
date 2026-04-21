@@ -13,7 +13,7 @@ import torch
 
 
 class WarehouseEnvSB3Final(gym.Env):
-    def __init__(self, base_env, assignment_interval=5, k_max=5):
+    def __init__(self, base_env, assignment_interval=50, k_max=5):
         super().__init__()
         self.base_env = base_env
         self.assignment_interval = int(assignment_interval)
