@@ -112,28 +112,7 @@ class WarehouseEnvSB3Final(gym.Env):
                     continue
                 cand_node_idx[r, k] = int(id_to_row.get(int(tid), -1))
         return cand_node_idx
-    # def _build_candidates(self):
-    #     """
-    #     Build up to k_max candidate task IDs per robot.
 
-    #     Current version is simple (consistent, not optimal):
-    #     - If robot full: no candidates
-    #     - Otherwise: take the first k_max available tasks (same set for all robots)
-    #     Replace with per-robot nearest-task ranking later.
-    #     """
-    #     available_tasks = list(self.base_env.get_available_task_ids())
-    #     cand = [[None] * self.k_max for _ in range(self.n_robots)]
-    #     if len(available_tasks) == 0:
-    #         return cand
-
-    #     top = available_tasks[: self.k_max]
-    #     for r in range(self.n_robots):
-    #         robot = self.base_env.robots[r]
-    #         if robot.capacity >= robot.maxCapacity:
-    #             continue
-    #         for k, task_id in enumerate(top):
-    #             cand[r][k] = int(task_id)
-    #     return cand
     def _build_candidates(self):
         """
         Build up to k_max candidate task IDs per robot, ordered by "best-first".

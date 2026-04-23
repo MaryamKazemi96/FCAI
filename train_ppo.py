@@ -300,7 +300,7 @@ def main():
             "activation": config["model"]["activation"],
             "dropout": config["model"]["dropout"],
             "noop_init": -1.0,
-            "noop_frozen": False,
+            "freeze_noop_logit": True,
             "logit_temperature": 1.0,
         }
 
