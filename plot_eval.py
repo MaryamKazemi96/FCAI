@@ -264,8 +264,75 @@ def plot_eval_completion_obsolete(det_data: Optional[Dict], stoch_data: Optional
     _save_fig(fig, out_png)
 
 
+# def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[Dict], out_png: Path) -> None:
+#     keys = ["rew/pickups_this_step", "rew/deliveries_this_step", "rew/obsolete_this_step", "rew/step_penalty"]
+
+#     def _extract(d: Optional[Dict]) -> Optional[Dict[str, np.ndarray]]:
+#         if not d:
+#             return None
+#         rc = d.get("reward_components", None)
+#         if not isinstance(rc, dict):
+#             return None
+#         out: Dict[str, np.ndarray] = {}
+#         for k in keys:
+#             arr = np.asarray(rc.get(k, []), dtype=float)
+#             if arr.size:
+#                 out[k] = arr
+#         return out if out else None
+
+#     det_rc = _extract(det_data)
+#     st_rc = _extract(stoch_data)
+#     if det_rc is None and st_rc is None:
+#         print("[INFO] No reward_components in eval JSON; skipping component plot.")
+#         return
+
+#     present = [k for k in keys if (det_rc and k in det_rc) or (st_rc and k in st_rc)]
+#     if not present:
+#         return
+
+#     x = np.arange(len(present))
+#     w = 0.35
+#     fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
+#     ax.set_facecolor("#fafafa")
+
+#     for offset, label, color, rc in [
+#         (-w / 2, "PPO Det", "#2980b9", det_rc),
+#         (+w / 2, "PPO Stoch", "#e67e22", st_rc),
+#     ]:
+#         if rc is None:
+#             continue
+#         means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
+#         stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
+#         ax.bar(x + offset, means, width=w, yerr=stds, capsize=5, label=label, color=color, alpha=0.8)
+
+#     ax.set_xticks(x)
+#     ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
+#     ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
+#     ax.set_title("Evaluation: Component Sums (Det vs Stoch)", fontsize=13, fontweight="bold")
+#     ax.grid(alpha=0.25, axis="y")
+#     ax.legend(fontsize=10)
+#     ax.spines["top"].set_visible(False)
+#     ax.spines["right"].set_visible(False)
+#     _save_fig(fig, out_png)
+
 def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[Dict], out_png: Path) -> None:
-    keys = ["rew/pickups_this_step", "rew/deliveries_this_step", "rew/obsolete_this_step", "rew/step_penalty"]
+    # Old reward keys (keep exactly as before)
+    old_keys = [
+        "rew/pickups_this_step",
+        "rew/deliveries_this_step",
+        "rew/obsolete_this_step",
+        "rew/step_penalty",
+    ]
+
+    # New reward keys (from new reward(info_reward["terms"]))
+    new_keys = [
+        "rew/completion_events",
+        "rew/abandoned_events",
+        "rew/missed_dropoff_events",
+        "rew/backlog_tasks",
+        # optional if you also store it as a component
+        # "rew/sum_rewards",
+    ]
 
     def _extract(d: Optional[Dict]) -> Optional[Dict[str, np.ndarray]]:
         if not d:
@@ -273,11 +340,15 @@ def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[D
         rc = d.get("reward_components", None)
         if not isinstance(rc, dict):
             return None
+
         out: Dict[str, np.ndarray] = {}
-        for k in keys:
-            arr = np.asarray(rc.get(k, []), dtype=float)
+        for k, v in rc.items():
+            try:
+                arr = np.asarray(v, dtype=float)
+            except Exception:
+                continue
             if arr.size:
-                out[k] = arr
+                out[str(k)] = arr
         return out if out else None
 
     det_rc = _extract(det_data)
@@ -286,35 +357,65 @@ def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[D
         print("[INFO] No reward_components in eval JSON; skipping component plot.")
         return
 
-    present = [k for k in keys if (det_rc and k in det_rc) or (st_rc and k in st_rc)]
-    if not present:
+    def _present_keys(keys: List[str]) -> List[str]:
+        return [
+            k for k in keys
+            if (det_rc is not None and k in det_rc) or (st_rc is not None and k in st_rc)
+        ]
+
+    present_old = _present_keys(old_keys)
+    present_new = _present_keys(new_keys)
+
+    if not present_old and not present_new:
+        print("[INFO] reward_components present, but no known component keys found; skipping component plot.")
         return
 
-    x = np.arange(len(present))
-    w = 0.35
-    fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
-    ax.set_facecolor("#fafafa")
+    # If both exist, create two plots:
+    # - out_png for NEW (preferred)
+    # - out_png with suffix "_old" for OLD (to keep previous plot too)
+    plot_jobs: List[Tuple[List[str], Path, str]] = []
+    if present_new:
+        plot_jobs.append((present_new, out_png, "Evaluation: Component Sums (NEW reward) (Det vs Stoch)"))
+    if present_old:
+        out_old = out_png.with_name(out_png.stem + "_old" + out_png.suffix)
+        plot_jobs.append((present_old, out_old, "Evaluation: Component Sums (OLD reward) (Det vs Stoch)"))
 
-    for offset, label, color, rc in [
-        (-w / 2, "PPO Det", "#2980b9", det_rc),
-        (+w / 2, "PPO Stoch", "#e67e22", st_rc),
-    ]:
-        if rc is None:
-            continue
-        means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
-        stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
-        ax.bar(x + offset, means, width=w, yerr=stds, capsize=5, label=label, color=color, alpha=0.8)
+    for present, png_path, title in plot_jobs:
+        x = np.arange(len(present))
+        w = 0.35
+        fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
+        ax.set_facecolor("#fafafa")
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
-    ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
-    ax.set_title("Evaluation: Component Sums (Det vs Stoch)", fontsize=13, fontweight="bold")
-    ax.grid(alpha=0.25, axis="y")
-    ax.legend(fontsize=10)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    _save_fig(fig, out_png)
+        for offset, label, color, rc in [
+            (-w / 2, "PPO Det", "#2980b9", det_rc),
+            (+w / 2, "PPO Stoch", "#e67e22", st_rc),
+        ]:
+            if rc is None:
+                continue
+            means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
+            stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
+            ax.bar(
+                x + offset,
+                means,
+                width=w,
+                yerr=stds,
+                capsize=5,
+                label=label,
+                color=color,
+                alpha=0.8,
+            )
 
+        ax.set_xticks(x)
+        ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
+        ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
+        ax.set_title(title, fontsize=13, fontweight="bold")
+        ax.grid(alpha=0.25, axis="y")
+        ax.legend(fontsize=10)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        _save_fig(fig, png_path)
+        
 def plot_training_logits(tb_data: Dict, out_png: Path, ma_window: int) -> None:
     tags = [t for t in tb_data.keys() if t.startswith("logits/")]
     fig, ax = plt.subplots(figsize=(16, 6), facecolor="white")

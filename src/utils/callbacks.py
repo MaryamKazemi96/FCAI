@@ -12,7 +12,7 @@ from pathlib import Path
 import json
 from typing import Any, Dict
 import torch as th
-
+from typing import Any, Dict, Tuple, Optional
 
 class FinalTaskAllocationCallback(BaseCallback):
     def __init__(self, save_freq=1000, save_path="./logs", verbose=1):
@@ -34,6 +34,65 @@ class FinalTaskAllocationCallback(BaseCallback):
         self._action_count = 0
         self._assigned_count = 0
         self._drop_count = 0
+
+    #add a helper to extract reward component for new reward structure
+
+    @staticmethod
+    def _extract_reward_info(info: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, float]]:
+        """
+        Returns (reward_mode, rew_dict) where rew_dict keys are like 'rew/...'
+        and values are floats for logging.
+        Supports both:
+          - flattened rew/* already in info
+          - env-provided info_reward dict (new or old)
+        """
+        rew: Dict[str, float] = {}
+
+        # Case A) already flattened into info as rew/*
+        for k, v in info.items():
+            if isinstance(k, str) and k.startswith("rew/") and isinstance(v, (int, float, np.number)):
+                rew[k] = float(v)
+
+        # If we already have rew/* keys, we can still also try to add missing ones from info_reward.
+        info_reward = info.get("info_reward", None)
+        if not isinstance(info_reward, dict):
+            # Some envs might put reward info directly in "reward_info" or similar
+            info_reward = info.get("reward_info", None)
+
+        if not isinstance(info_reward, dict):
+            return (info.get("reward_mode", None), rew)
+
+        reward_mode = info_reward.get("reward_mode", None)
+
+        # Always log total reward if present
+        if "sum_rewards" in info_reward and isinstance(info_reward["sum_rewards"], (int, float, np.number)):
+            rew.setdefault("rew/sum_rewards", float(info_reward["sum_rewards"]))
+
+        # OLD reward components
+        if "pickups_this_step" in info_reward:
+            if isinstance(info_reward.get("pickups_this_step"), (int, float, np.number)):
+                rew["rew/pickups_this_step"] = float(info_reward["pickups_this_step"])
+            if isinstance(info_reward.get("deliveries_this_step"), (int, float, np.number)):
+                rew["rew/deliveries_this_step"] = float(info_reward["deliveries_this_step"])
+            if isinstance(info_reward.get("obsolete_this_step"), (int, float, np.number)):
+                rew["rew/obsolete_this_step"] = float(info_reward["obsolete_this_step"])
+
+            # infer mode if not set
+            if reward_mode is None:
+                reward_mode = "old"
+
+        # NEW reward components
+        terms = info_reward.get("terms", None)
+        if isinstance(terms, dict):
+            for key in ["completion_events", "abandoned_events", "missed_dropoff_events", "backlog_tasks"]:
+                v = terms.get(key, None)
+                if isinstance(v, (int, float, np.number)):
+                    rew[f"rew/{key}"] = float(v)
+
+            if reward_mode is None:
+                reward_mode = "new"
+
+        return (reward_mode, rew)
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
@@ -154,14 +213,20 @@ class FinalTaskAllocationCallback(BaseCallback):
                 continue
 
             # log rew/*
-            for k, v in info.items():
-                if not (isinstance(k, str) and k.startswith("rew/")):
-                    continue
-                if isinstance(v, (int, float, np.number)):
-                    v = float(v)
-                    self.logger.record(f"{k}_step", v)
-                    self._ep_rew_sums[k] = self._ep_rew_sums.get(k, 0.0) + v
+            # for k, v in info.items():
+            #     if not (isinstance(k, str) and k.startswith("rew/")):
+            #         continue
+            #     if isinstance(v, (int, float, np.number)):
+            #         v = float(v)
+            #         self.logger.record(f"{k}_step", v)
+            #         self._ep_rew_sums[k] = self._ep_rew_sums.get(k, 0.0) + v
+            reward_mode, rew = self._extract_reward_info(info)
+            if reward_mode is not None:
+                self.logger.record("rew/reward_mode", 0.0 if reward_mode == "old" else 1.0)
 
+            for k, v in rew.items():
+                self.logger.record(f"{k}_step", float(v))
+                self._ep_rew_sums[k] = self._ep_rew_sums.get(k, 0.0) + float(v)
             # episode end
             if "episode_completed" in info:
                 completed = info.get("episode_completed", 0)
