@@ -529,8 +529,44 @@ class MultiTaskAllocationEnv(gym.Env):
         self.list_ego_graphs, _, self.trueid_idx_mapping = get_edge_idx_graph(
             self.attributes_matrix, self.n_tasks, len(self.robots), self.radius, self.use_true_id
         )
-        # print(f"Ego Graphs before removals: {self.list_ego_graphs}")
 
+        # print("[DEBUG base_env] list_ego_graphs[0] sample:", self.list_ego_graphs.get(0, [])[:1])
+        # print("[DEBUG base_env] list_ego_graphs[1] sample:", self.list_ego_graphs.get(1, [])[:1])
+        # print("[DEBUG base_env] tasks_info true ids:", self.tasks_info[:,0].astype(int).tolist() if len(self.tasks_info) > 0 else [])
+        # print(f"Ego Graphs before removals: {self.list_ego_graphs}")
+        
+        # ---- DEBUG: ego graph structure (print only sometimes) ----
+        # if not hasattr(self, "_debug_ego_prints"):
+        #     self._debug_ego_prints = 0
+        # if self._debug_ego_prints < 3:  # print only first 3 calls
+        #     self._debug_ego_prints += 1
+        #     print("\n[DEBUG base_env] use_true_id =", self.use_true_id)
+        #     print("[DEBUG base_env] attributes_matrix shape:", self.attributes_matrix.shape)
+        #     print("[DEBUG base_env] first 10 true_ids in attributes_matrix[:,0]:",
+        #         self.attributes_matrix[:10, 0].astype(int).tolist())
+
+        #     keys = list(self.list_ego_graphs.keys())
+        #     print("[DEBUG base_env] ego_graph keys sample:", keys[:min(10, len(keys))])
+        #     # Show one robot ego list
+        #     if keys:
+        #         k0 = keys[0]
+        #         ego_list = self.list_ego_graphs.get(k0, [])
+        #         print(f"[DEBUG base_env] ego_list for key={k0}: blocks={len(ego_list)}")
+        #         if ego_list:
+        #             blk0 = np.asarray(ego_list[0])
+        #             print("[DEBUG base_env] first block shape:", blk0.shape)
+        #             print("[DEBUG base_env] first 5 edges of first block:", blk0[:5].tolist())
+
+        #     # mapping format check
+        #     m = self.trueid_idx_mapping
+        #     if isinstance(m, (list, tuple)) and len(m) == 2:
+        #         print("[DEBUG base_env] trueid_idx_mapping list lens:",
+        #             len(m[0]), len(m[1]),
+        #             "sample ids:", np.asarray(m[1])[:10].astype(int).tolist())
+        #     elif isinstance(m, dict):
+        #         print("[DEBUG base_env] trueid_idx_mapping is dict, size:", len(m))
+        #     else:
+        #         print("[DEBUG base_env] trueid_idx_mapping type:", type(m))
         # Remove edges for full-capacity robots
         full_capacity_robot_ids = [robot.robot_id for robot in full_capacity_robots]
         
