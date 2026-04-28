@@ -832,46 +832,47 @@ class WarehouseEnvSB3Final(gym.Env):
                 cand_node_idx[r, k] = int(id_to_row.get(int(tid), -1))
         return cand_node_idx
 
-    # def _build_candidates(self):
-    #     """
-    #     Build up to k_max candidate task IDs per robot, ordered by smallest distance to pickup.
-    #     """
-    #     available_task_ids = list(self.base_env.get_available_task_ids())
-    #     cand = [[None] * self.k_max for _ in range(self.n_robots)]
-    #     if not available_task_ids:
-    #         return cand
+    def _build_candidatesnor_working(self):
+        """
+        Build up to k_max candidate task IDs per robot, ordered by smallest distance to pickup.
+        """
+        available_task_ids = list(self.base_env.get_available_task_ids())
+        cand = [[None] * self.k_max for _ in range(self.n_robots)]
+        if not available_task_ids:
+            return cand
 
-    #     task_map = getattr(self.base_env, "taskid_to_task", {})
-    #     if not task_map:
-    #         top = available_task_ids[: self.k_max]
-    #         for r in range(self.n_robots):
-    #             robot = self.base_env.robots[r]
-    #             if robot.capacity >= robot.maxCapacity:
-    #                 continue
-    #             for k, tid in enumerate(top):
-    #                 cand[r][k] = int(tid)
-    #         return cand
+        task_map = getattr(self.base_env, "taskid_to_task", {})
+        if not task_map:
+            top = available_task_ids[: self.k_max]
+            for r in range(self.n_robots):
+                robot = self.base_env.robots[r]
+                if robot.capacity >= robot.maxCapacity:
+                    continue
+                for k, tid in enumerate(top):
+                    cand[r][k] = int(tid)
+            return cand
 
-    #     for r in range(self.n_robots):
-    #         robot = self.base_env.robots[r]
-    #         if robot.capacity >= robot.maxCapacity:
-    #             continue
+        for r in range(self.n_robots):
+            robot = self.base_env.robots[r]
+            if robot.capacity >= robot.maxCapacity:
+                continue
 
-    #         rpos = np.asarray(robot.coordinate[:2], dtype=np.float32)
-    #         scored = []
-    #         for tid in available_task_ids:
-    #             t = task_map.get(tid, None)
-    #             if t is None:
-    #                 continue
-    #             p = np.asarray(t.pick_up_coord[:2], dtype=np.float32)
-    #             d = float(np.linalg.norm(rpos - p))
-    #             scored.append((d, int(tid)))
+            rpos = np.asarray(robot.coordinate[:2], dtype=np.float32)
+            scored = []
+            for tid in available_task_ids:
+                t = task_map.get(tid, None)
+                if t is None:
+                    continue
+                p = np.asarray(t.pick_up_coord[:2], dtype=np.float32)
+                d = float(np.linalg.norm(rpos - p))
+                scored.append((d, int(tid)))
 
-    #         scored.sort(key=lambda x: x[0])
-    #         for k, (_, tid) in enumerate(scored[: self.k_max]):
-    #             cand[r][k] = int(tid)
+            scored.sort(key=lambda x: x[0])
+            for k, (_, tid) in enumerate(scored[: self.k_max]):
+                cand[r][k] = int(tid)
+        # print("[DEBUG _build_candidates] cand:", cand)
 
-    #     return cand
+        return cand
     #this version fix the issue with task id to task object mapping and also filter the candidate by release time, assigned/obsolete status, and robot capacity
     def _build_candidates(self):
         """
@@ -890,12 +891,17 @@ class WarehouseEnvSB3Final(gym.Env):
             return cand
 
         attr = np.asarray(self._latest_attribute_matrix, dtype=np.float32)
+        # print("[DEBUG _build_candidates] attr", attr)
+        # print("[DEBUG _build_candidates] self._latest_attribute_matrix", self._latest_attribute_matrix)
+        # print("[DEBUG _build_candidates] attr shape:", attr.ndim, attr.shape)
         if attr.ndim != 2 or attr.shape[0] <= self.n_robots:
             return cand
 
         # Current task rows are rows after the robot rows
         task_rows = np.arange(self.n_robots, attr.shape[0], dtype=np.int64)
         task_ids = attr[task_rows, 0].astype(int)
+        # print("[DEBUG TASK DATA]",task_rows)
+        # print("[DEBUG _build_candidates] task_ids from attr:", task_ids[:20])
         task_coords = attr[task_rows, 1:3].astype(np.float32)
 
         # Filter out invalid/empty rows if needed
@@ -923,9 +929,9 @@ class WarehouseEnvSB3Final(gym.Env):
 
             for k, (_, tid) in enumerate(scored[: self.k_max]):
                 cand[r][k] = int(tid)
-
+        # print("[DEBUG _build_candidates with wrong task id] cand:", cand)
         return cand
-    def _build_candidatesold(self):
+    def _build_candidatesworking_butbuggi(self):
         """
         Build up to k_max candidate task IDs per robot, ordered by smallest distance to pickup.
 
@@ -1020,6 +1026,7 @@ class WarehouseEnvSB3Final(gym.Env):
     # -------- gym API --------
 
     def reset(self, seed=None, options=None):
+        
         if seed is not None:
             np.random.seed(seed)
             torch.manual_seed(seed)
@@ -1029,6 +1036,7 @@ class WarehouseEnvSB3Final(gym.Env):
             self.last_episode_obsolete = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
 
         obs, info = self.base_env.reset()
+        # print("[DEBUG reset] obs after calling baseenv.reset:", obs)
         self.step_count = 0
         self.episode_count += 1
 
@@ -1057,7 +1065,7 @@ class WarehouseEnvSB3Final(gym.Env):
             assignments,
             assignment_interval=self.assignment_interval
         )
-
+        # print("[DEBUG step] obs:", obs)
         if isinstance(reward, dict):
             reward = sum(reward.values())
 
@@ -1095,6 +1103,7 @@ class WarehouseEnvSB3Final(gym.Env):
         - attribute_matrix[:, 0] contains true IDs, used only for candidate mapping
         """
         ego_graphs, attribute_matrix = obs
+        # print("[DEBUG _convert_observation] attribute_matrix:", attribute_matrix)
         attribute_matrix = np.asarray(attribute_matrix, dtype=np.float32)
         N_global, F = attribute_matrix.shape
         self._latest_attribute_matrix = attribute_matrix.copy()

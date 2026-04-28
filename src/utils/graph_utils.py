@@ -211,7 +211,7 @@ def update_shared_attribute_matrix(attribute_array, current_robots_array_padded,
     # Ensure arrays are numpy arrays
     robots = np.asarray(current_robots_array_padded)
     tasks = np.asarray(current_task_array)
-
+    # print('[debug] Current robots and tasks before padding:', robots, tasks)
     # If tasks is a 1-D empty array (e.g., np.zeros((0,))), convert to (0, feat)
     if tasks.ndim == 1 and tasks.size == 0:
         tasks = tasks.reshape(0, robots.shape[1])
@@ -230,13 +230,13 @@ def update_shared_attribute_matrix(attribute_array, current_robots_array_padded,
 
     robots_p = _pad(robots, n_feat)
     tasks_p = _pad(tasks, n_feat) if tasks.size != 0 else np.zeros((0, n_feat), dtype=robots_p.dtype)
-
+    # print('[debug] Padded robots and padded tasks:', robots_p, tasks_p)
     # Stack robots then tasks
     attribute_array_new = np.vstack((robots_p, tasks_p)) if tasks_p.shape[0] > 0 else robots_p.copy()
 
     # Build mapping: indices and true ids (first column)
     mapping_list = [np.arange(len(attribute_array_new)), attribute_array_new[:, 0]]
-
+    # print('[debug] Updated attribute array:', attribute_array_new, mapping_list)
     return attribute_array_new, mapping_list
 
 

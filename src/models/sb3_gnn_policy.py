@@ -660,7 +660,7 @@ class RTGNNPolicy(ActorCriticPolicy):
             new_params = [p for p in extra_params if id(p) not in existing]
             if new_params:
                 self.optimizer.add_param_group({"params": new_params})
-        print("Any trainable params?", any(p.requires_grad for p in self.parameters()))
+        # print("Any trainable params?", any(p.requires_grad for p in self.parameters()))
 
     def _append_noop(self, logits_k: th.Tensor) -> th.Tensor:
         # logits_k: [B,R,K]

@@ -216,7 +216,7 @@ def make_env(config, seed: int):
         batch_file = Path(env_config["data_dir"]) / f"tasks_batch_{i}.npy"
         if batch_file.exists():
             batches.append(np.load(batch_file, allow_pickle=True))
-
+    # print("[debug] baches loaded:", len(batches), batches)
     base_env = MultiTaskAllocationEnv(
         agents_cont_coord_array=agents,
         task_cont_coord_array=batches,

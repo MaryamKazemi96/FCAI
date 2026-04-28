@@ -148,7 +148,7 @@ def plot_eval_rewards_per_episode(
 
     for label, color, data in [
         ("PPO Deterministic", "#2980b9", det_data),
-        ("PPO Stochastic", "#e67e22", stoch_data),
+        ("PPO Stochastic", "#27ae60", stoch_data),
     ]:
         if not data:
             continue
@@ -388,7 +388,7 @@ def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[D
 
         for offset, label, color, rc in [
             (-w / 2, "PPO Det", "#2980b9", det_rc),
-            (+w / 2, "PPO Stoch", "#e67e22", st_rc),
+            (+w / 2, "PPO Stoch", "#e7722", st_rc),
         ]:
             if rc is None:
                 continue

@@ -238,7 +238,7 @@ class Tasks_variable:
         return current_time >= self.release_time
 
     def is_obsolete(self, current_time=0):
-        if (not self.is_pickedup) and (current_time > self.ddl_pick * 1.2):
+        if (not self.is_pickedup) and (current_time > self.ddl_pick * 4.2):
             return 1
         # if picked up but dropoff deadline passed and still not dropped
         if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff *1):
@@ -265,7 +265,7 @@ class Tasks_variable:
         self.is_droppedoff = 0
         self.release_time = int(self.t_release)
         self.ddl_pick = self.release_time + int(self.idle_allowance_time)
-        self.ddl_dropoff = self.ddl_pick + int(self.idle_allowance_time)
+        self.ddl_dropoff = self.ddl_pick + int(self.estimatedTravelTime * 1.5)
         self.coordinate = np.array(self.pick_up_coord, dtype=np.float32).reshape(1, -1)
         # bookkeeping for one-time rewards / penalties
         self.picked_by = None                 # which robot picked it up
@@ -424,16 +424,20 @@ class MultiTaskAllocationEnv(gym.Env):
         # Update number of tasks and mapping
         self.n_tasks = len(self.tasks)
         self.taskid_to_task = {t.id: t for t in self.tasks}
+        # print(self.tasks_info, 'tasks info in reset tasks')
 
     def _init_attribute_matrix(self):
+        # print("[debug] Initializing attributes matrix with robots_info and tasks_info", self.tasks_info)
         self.attributes_matrix = np.row_stack((self.robots_info, self.tasks_info))
 
     def _get_observations(self, update_node_att=True):
         if update_node_att:
             # print(self.attributes_matrix.shape, 'attributes matrix shape before update in get observations')
             self.update_nodes_attr()
+            # print("[debug] Attributes Matrix in _get_observations after update_nodes_attr:", self.attributes_matrix)
             # print(f"Task IDs after update_shared_attribute_matrix: {self.attributes_matrix[:, 0]}")
         self.update_graph()
+        # print("[debug] attributes_matrix in _get_observationsafter update_graph", self.attributes_matrix)
         return self.list_ego_graphs, self.attributes_matrix
 
     def update_nodes_attr(self):
@@ -806,7 +810,7 @@ class MultiTaskAllocationEnv(gym.Env):
         # 5. UPDATE OBSERVATIONS
         # -------------------------------------------------
         obs = self._get_observations(update_node_att=True)
-    
+        # print("[debug] obs in base env step:", obs)
         # -------------------------------------------------
         # 6. INCREMENT TIME AND RETURN
         # -------------------------------------------------

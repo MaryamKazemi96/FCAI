@@ -45,7 +45,7 @@ ppo:
 
 # Training
 training:
-  total_timesteps: 20000  # Total environment steps
+  total_timesteps: 50000  # Total environment steps
   save_freq: 10000  # Save model every N steps
   eval_freq: 10000  # Evaluate every N steps
   eval_episodes: 10
