@@ -100,6 +100,8 @@ def test_ego_graph_generation():
     # Load agents and tasks
     agents = np.load(data_dir / "agents.npy")
     tasks = np.load(data_dir / "tasks_batch_0.npy")  # Load the first batch of tasks
+    print("tasks:", tasks)
+    print("agents:", agents)
     n_features = max(agents.shape[1], tasks.shape[1])  # Determine the maximum number of features
     agents = pad_matrix(agents, n_features=n_features)
     tasks = pad_matrix(tasks, n_features=n_features)

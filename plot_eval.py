@@ -55,6 +55,20 @@ def _moving_average(data: np.ndarray, window: int) -> np.ndarray:
     pad_len = data.size - ma.size
     return np.concatenate([data[:pad_len], ma])
 
+def _latest_run_dir(seed_dir: Path) -> Path:
+    runs = sorted(seed_dir.glob("run_*"), key=lambda p: p.stat().st_mtime)
+    if not runs:
+        raise FileNotFoundError(f"No run_* directories found under {seed_dir}")
+    return runs[-1]
+
+
+def _pick_run_dir(seed_dir: Path, run_id: Optional[str]) -> Path:
+    if run_id:
+        rd = seed_dir / f"run_{run_id}"
+        if not rd.exists():
+            raise FileNotFoundError(f"Run dir not found: {rd}")
+        return rd
+    return _latest_run_dir(seed_dir)
 
 # ---------------- baselines ----------------
 
@@ -134,7 +148,7 @@ def plot_eval_rewards_per_episode(
 
     for label, color, data in [
         ("PPO Deterministic", "#2980b9", det_data),
-        ("PPO Stochastic", "#e67e22", stoch_data),
+        ("PPO Stochastic", "#27ae60", stoch_data),
     ]:
         if not data:
             continue
@@ -250,8 +264,75 @@ def plot_eval_completion_obsolete(det_data: Optional[Dict], stoch_data: Optional
     _save_fig(fig, out_png)
 
 
+# def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[Dict], out_png: Path) -> None:
+#     keys = ["rew/pickups_this_step", "rew/deliveries_this_step", "rew/obsolete_this_step", "rew/step_penalty"]
+
+#     def _extract(d: Optional[Dict]) -> Optional[Dict[str, np.ndarray]]:
+#         if not d:
+#             return None
+#         rc = d.get("reward_components", None)
+#         if not isinstance(rc, dict):
+#             return None
+#         out: Dict[str, np.ndarray] = {}
+#         for k in keys:
+#             arr = np.asarray(rc.get(k, []), dtype=float)
+#             if arr.size:
+#                 out[k] = arr
+#         return out if out else None
+
+#     det_rc = _extract(det_data)
+#     st_rc = _extract(stoch_data)
+#     if det_rc is None and st_rc is None:
+#         print("[INFO] No reward_components in eval JSON; skipping component plot.")
+#         return
+
+#     present = [k for k in keys if (det_rc and k in det_rc) or (st_rc and k in st_rc)]
+#     if not present:
+#         return
+
+#     x = np.arange(len(present))
+#     w = 0.35
+#     fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
+#     ax.set_facecolor("#fafafa")
+
+#     for offset, label, color, rc in [
+#         (-w / 2, "PPO Det", "#2980b9", det_rc),
+#         (+w / 2, "PPO Stoch", "#e67e22", st_rc),
+#     ]:
+#         if rc is None:
+#             continue
+#         means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
+#         stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
+#         ax.bar(x + offset, means, width=w, yerr=stds, capsize=5, label=label, color=color, alpha=0.8)
+
+#     ax.set_xticks(x)
+#     ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
+#     ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
+#     ax.set_title("Evaluation: Component Sums (Det vs Stoch)", fontsize=13, fontweight="bold")
+#     ax.grid(alpha=0.25, axis="y")
+#     ax.legend(fontsize=10)
+#     ax.spines["top"].set_visible(False)
+#     ax.spines["right"].set_visible(False)
+#     _save_fig(fig, out_png)
+
 def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[Dict], out_png: Path) -> None:
-    keys = ["rew/pickups_this_step", "rew/deliveries_this_step", "rew/obsolete_this_step", "rew/step_penalty"]
+    # Old reward keys (keep exactly as before)
+    old_keys = [
+        "rew/pickups_this_step",
+        "rew/deliveries_this_step",
+        "rew/obsolete_this_step",
+        "rew/step_penalty",
+    ]
+
+    # New reward keys (from new reward(info_reward["terms"]))
+    new_keys = [
+        "rew/completion_events",
+        "rew/abandoned_events",
+        "rew/missed_dropoff_events",
+        "rew/backlog_tasks",
+        # optional if you also store it as a component
+        # "rew/sum_rewards",
+    ]
 
     def _extract(d: Optional[Dict]) -> Optional[Dict[str, np.ndarray]]:
         if not d:
@@ -259,11 +340,15 @@ def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[D
         rc = d.get("reward_components", None)
         if not isinstance(rc, dict):
             return None
+
         out: Dict[str, np.ndarray] = {}
-        for k in keys:
-            arr = np.asarray(rc.get(k, []), dtype=float)
+        for k, v in rc.items():
+            try:
+                arr = np.asarray(v, dtype=float)
+            except Exception:
+                continue
             if arr.size:
-                out[k] = arr
+                out[str(k)] = arr
         return out if out else None
 
     det_rc = _extract(det_data)
@@ -272,36 +357,177 @@ def plot_eval_reward_components(det_data: Optional[Dict], stoch_data: Optional[D
         print("[INFO] No reward_components in eval JSON; skipping component plot.")
         return
 
-    present = [k for k in keys if (det_rc and k in det_rc) or (st_rc and k in st_rc)]
-    if not present:
+    def _present_keys(keys: List[str]) -> List[str]:
+        return [
+            k for k in keys
+            if (det_rc is not None and k in det_rc) or (st_rc is not None and k in st_rc)
+        ]
+
+    present_old = _present_keys(old_keys)
+    present_new = _present_keys(new_keys)
+
+    if not present_old and not present_new:
+        print("[INFO] reward_components present, but no known component keys found; skipping component plot.")
         return
 
-    x = np.arange(len(present))
-    w = 0.35
-    fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
+    # If both exist, create two plots:
+    # - out_png for NEW (preferred)
+    # - out_png with suffix "_old" for OLD (to keep previous plot too)
+    plot_jobs: List[Tuple[List[str], Path, str]] = []
+    if present_new:
+        plot_jobs.append((present_new, out_png, "Evaluation: Component Sums (NEW reward) (Det vs Stoch)"))
+    if present_old:
+        out_old = out_png.with_name(out_png.stem + "_old" + out_png.suffix)
+        plot_jobs.append((present_old, out_old, "Evaluation: Component Sums (OLD reward) (Det vs Stoch)"))
+
+    for present, png_path, title in plot_jobs:
+        x = np.arange(len(present))
+        w = 0.35
+        fig, ax = plt.subplots(figsize=(max(9, len(present) * 2.2), 5), facecolor="white")
+        ax.set_facecolor("#fafafa")
+
+        for offset, label, color, rc in [
+            (-w / 2, "PPO Det", "#2980b9", det_rc),
+            (+w / 2, "PPO Stoch", "#e7722", st_rc),
+        ]:
+            if rc is None:
+                continue
+            means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
+            stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
+            ax.bar(
+                x + offset,
+                means,
+                width=w,
+                yerr=stds,
+                capsize=5,
+                label=label,
+                color=color,
+                alpha=0.8,
+            )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
+        ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
+        ax.set_title(title, fontsize=13, fontweight="bold")
+        ax.grid(alpha=0.25, axis="y")
+        ax.legend(fontsize=10)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        _save_fig(fig, png_path)
+        
+def plot_training_logits(tb_data: Dict, out_png: Path, ma_window: int) -> None:
+    tags = [t for t in tb_data.keys() if t.startswith("logits/")]
+    fig, ax = plt.subplots(figsize=(16, 6), facecolor="white")
     ax.set_facecolor("#fafafa")
 
-    for offset, label, color, rc in [
-        (-w / 2, "PPO Det", "#2980b9", det_rc),
-        (+w / 2, "PPO Stoch", "#e67e22", st_rc),
-    ]:
-        if rc is None:
-            continue
-        means = [float(rc[k].mean()) if k in rc else 0.0 for k in present]
-        stds = [float(rc[k].std()) if k in rc else 0.0 for k in present]
-        ax.bar(x + offset, means, width=w, yerr=stds, capsize=5, label=label, color=color, alpha=0.8)
+    if not tags:
+        ax.axis("off")
+        ax.set_title("No logits/* tags found in TensorBoard logs.", fontsize=14, fontweight="bold")
+        _save_fig(fig, out_png)
+        return
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(present, rotation=15, ha="right", fontsize=10)
-    ax.set_ylabel("Per-episode sum (mean ± std)", fontsize=11, fontweight="bold")
-    ax.set_title("Evaluation: Component Sums (Det vs Stoch)", fontsize=13, fontweight="bold")
-    ax.grid(alpha=0.25, axis="y")
-    ax.legend(fontsize=10)
+    # If both exist, don't plot NOOP twice:
+    # - keep logits/noop_mean
+    # - drop logits/action_<noop_idx>_mean where noop_idx inferred as max action index present
+    action_tags = []
+    for t in tags:
+        name = t.split("/", 1)[1]
+        if name.startswith("action_") and name.endswith("_mean"):
+            action_tags.append(name)
+
+    # infer noop_idx as the largest action index seen (MultiDiscrete head => NOOP is last index)
+    action_indices = []
+    for name in action_tags:
+        try:
+            idx = int(name.split("_")[1])
+            action_indices.append(idx)
+        except Exception:
+            pass
+
+    noop_idx = max(action_indices) if action_indices else None
+    if noop_idx is not None and "logits/noop_mean" in tags:
+        noop_action_tag = f"logits/action_{noop_idx}_mean"
+        tags = [t for t in tags if t != noop_action_tag]
+
+    # Plot in stable order: action_0..action_K then noop_mean last
+    def _key(t: str):
+        name = t.split("/", 1)[1]
+        if name.startswith("action_"):
+            try:
+                idx = int(name.split("_")[1])
+                return (0, idx)
+            except Exception:
+                return (1, name)
+        if name == "noop_mean":
+            return (2, 999999)
+        return (3, name)
+
+    tags = sorted(tags, key=_key)
+
+    for tag in tags:
+        s = tb_data[tag]
+        steps = np.asarray(s["steps"], dtype=float)
+        vals = np.asarray(s["values"], dtype=float)
+        ax.plot(steps, _moving_average(vals, ma_window), lw=2.0, label=tag.replace("logits/", ""))
+
+    ax.set_xlabel("Training Steps", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Mean logit (masked, active robots)", fontsize=11, fontweight="bold")
+    ax.set_title("Training: Per-Action Mean Logits (meaningful steps)", fontsize=14, fontweight="bold")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=9, ncol=2, loc="best")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     _save_fig(fig, out_png)
 
+def plot_training_logit_gaps(tb_data: Dict, out_png: Path, ma_window: int) -> None:
+    """
+    Plot logit-separation diagnostics:
+      - gap_best_minus_noop_mean
+      - gap_best_minus_second_mean
+    (optionally also max_task_logit_mean and noop_logit_mean)
+    """
+    wanted = [
+        "logits/gap_best_minus_noop_mean",
+        "logits/gap_best_minus_second_mean",
+        "logits/max_task_logit_mean",
+        "logits/noop_logit_mean",
+        "logits/second_best_task_logit_mean",
+    ]
+    tags = [t for t in wanted if t in tb_data]
 
+    fig, ax = plt.subplots(figsize=(16, 6), facecolor="white")
+    ax.set_facecolor("#fafafa")
+
+    if not tags:
+        ax.axis("off")
+        ax.set_title("No logit-gap tags found (logits/gap_*).", fontsize=14, fontweight="bold")
+        _save_fig(fig, out_png)
+        return
+
+    # stable order
+    order = {t: i for i, t in enumerate(wanted)}
+    tags = sorted(tags, key=lambda t: order.get(t, 999))
+
+    for tag in tags:
+        s = tb_data[tag]
+        steps = np.asarray(s["steps"], dtype=float)
+        vals = np.asarray(s["values"], dtype=float)
+        ax.plot(
+            steps,
+            _moving_average(vals, ma_window),
+            lw=2.0,
+            label=tag.replace("logits/", ""),
+        )
+
+    ax.set_xlabel("Training Steps", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Logit / gap (moving avg)", fontsize=11, fontweight="bold")
+    ax.set_title("Training: Logit Separation Diagnostics (meaningful steps)", fontsize=14, fontweight="bold")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=9, ncol=2, loc="best")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    _save_fig(fig, out_png)
 # ---------------- training plots ----------------
 
 def _plot_series(ax, series: Dict[str, List[float]], title: str, color: str, ma_window: int, yscale: Optional[str] = None) -> None:
@@ -527,44 +753,42 @@ def plot_agg_completion_obsolete(all_det: List[Dict], all_stoch: List[Dict], bas
     _save_fig(fig, out_png)
 
 
-# ---------------- main ----------------
-
-def process_seed(seed: int, seed_dir: Path, root_dir: Path, episodes: int, ma_window: int, baseline_std: bool) -> tuple:
-    det_json = seed_dir / "eval_results_deterministic.json"
-    stoch_json = seed_dir / "eval_results_stochastic.json"
+def process_seed(seed: int, run_dir: Path, root_dir: Path, ma_window: int, baseline_std: bool):
+    det_json = run_dir / "eval_results_deterministic.json"
+    stoch_json = run_dir / "eval_results_stochastic.json"
 
     if not det_json.exists() or not stoch_json.exists():
-        print(f"[ERROR] Missing eval JSON(s) for seed {seed}. Run eval_ppo.py first.")
-        print(f"  Expected: {det_json}")
-        print(f"  Expected: {stoch_json}")
+        print(f"[ERROR] Missing eval JSON(s) for seed {seed} in {run_dir}. Run eval_ppo.py first.")
         return None, None
 
     det_result = _load_json(det_json)
     stoch_result = _load_json(stoch_json)
 
-    plots_dir = seed_dir / "eval_plots"
+    plots_dir = run_dir / "eval_plots"
 
     baselines_for_plot = load_baselines_all(root_dir)
     baselines_stats = load_baseline_stats_for_seed(root_dir, seed)
 
-    # --- evaluation plots ---
-    print(f"\n  [seed {seed}] Generating evaluation plots → {plots_dir}")
+    print(f"\n  [seed {seed}] run={run_dir.name} Generating evaluation plots → {plots_dir}")
     plot_eval_rewards_per_episode(det_result, stoch_result, baselines_for_plot, plots_dir / "eval_rewards_per_episode.png", ma_window)
     plot_eval_rewards_boxplot(det_result, stoch_result, baselines_for_plot, plots_dir / "eval_rewards_boxplot.png")
     plot_eval_completion_obsolete(det_result, stoch_result, baselines_for_plot, plots_dir / "eval_completion_obsolete.png")
     plot_eval_reward_components(det_result, stoch_result, plots_dir / "eval_reward_components.png")
 
-    # --- training plots ---
-    tb_dir = seed_dir / "tensorboard"
+    # training plots from TensorBoard
+    tb_dir = run_dir / "tensorboard"
     if tb_dir.exists():
-        print(f"  [seed {seed}] Generating training plots → {plots_dir}")
         tb_data = load_tensorboard_data(tb_dir)
         if tb_data:
+            print(f"  [seed {seed}] Generating training plots → {plots_dir}")
+            # ---- call your existing training plotters (same as before) ----
             plot_training_rewards(tb_data, seed, baselines_stats, plots_dir / "training_rewards.png", ma_window, baseline_std)
             plot_training_entropy(tb_data, plots_dir / "training_entropy.png", ma_window)
             plot_training_policy_behavior(tb_data, plots_dir / "training_policy_behavior.png", ma_window)
             plot_training_value_overview(tb_data, plots_dir / "training_value_overview.png", ma_window)
             plot_training_value_loss(tb_data, plots_dir / "training_value_loss.png", ma_window)
+            plot_training_logits(tb_data, out_png=plots_dir / "training_logits.png", ma_window=ma_window)
+            plot_training_logit_gaps(tb_data, out_png=plots_dir / "training_logit_gaps.png", ma_window=ma_window)
     else:
         print(f"  [seed {seed}] No TensorBoard dir at {tb_dir}; skipping training plots.")
 
@@ -578,18 +802,21 @@ def main() -> None:
     )
     ap.add_argument("--checkpoint-dir", type=str, default="checkpoints_ppo")
     ap.add_argument("--seeds", type=int, nargs="*", default=None)
-    ap.add_argument("--episodes", type=int, default=100,
-                    help="Only used for aggregate JSON metadata compatibility; plots read actual JSON lengths.")
-    ap.add_argument("--ma-window", type=int, default=20)
+    ap.add_argument("--run-id", type=str, default=None, help="If set, use run_<id> for all seeds; else latest run per seed.")
+    ap.add_argument("--ma-window", type=int, default=5)
     ap.add_argument("--no-baseline-std", action="store_true")
     args = ap.parse_args()
 
     root_dir = Path(args.checkpoint_dir)
 
     if args.seeds:
-        seed_dirs = [(s, root_dir / f"seed_{s}") for s in args.seeds]
+        seed_dirs: List[Tuple[int, Path]] = [(int(s), root_dir / f"seed_{int(s)}") for s in args.seeds]
     else:
-        seed_dirs = [(int(d.name.replace("seed_", "")), d) for d in sorted(root_dir.glob("seed_*"))]
+        seed_dirs = [
+            (int(d.name.replace("seed_", "")), d)
+            for d in sorted(root_dir.glob("seed_*"))
+            if d.is_dir()
+        ]
 
     if not seed_dirs:
         print(f"[ERROR] No seed directories found in {root_dir}.")
@@ -597,13 +824,19 @@ def main() -> None:
 
     all_det: List[Dict] = []
     all_stoch: List[Dict] = []
-
     for seed, seed_dir in seed_dirs:
+        if not seed_dir.exists():
+            continue
+        try:
+            run_dir = _pick_run_dir(seed_dir, args.run_id)
+        except Exception as e:
+            print(f"[WARN] seed {seed}: {e} – skipping")
+            continue
+
         det, st = process_seed(
             seed=seed,
-            seed_dir=seed_dir,
+            run_dir=run_dir,
             root_dir=root_dir,
-            episodes=args.episodes,
             ma_window=args.ma_window,
             baseline_std=not args.no_baseline_std,
         )
@@ -612,7 +845,7 @@ def main() -> None:
         if st is not None:
             all_stoch.append(st)
 
-    # aggregate plots
+    # aggregate plots (all evaluated runs)
     agg_plots_dir = root_dir / "eval_plots"
     baselines = load_baselines_all(root_dir)
 

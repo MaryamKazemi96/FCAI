@@ -7,3 +7,15 @@ checkpoints_all_batches/
 *.json
 tensorboard_logs/
 *.npy
+checkpoints_ppo/
+tensorboard_logs/
+*.tfevents.*
+*.zip
+data/*.npy
+
+checkpoints_ppo*/
+checkpoints_ppo old/
+checkpoints_ppo_old/
+**/events.out.tfevents.*
+*.zip
+data/*.npy

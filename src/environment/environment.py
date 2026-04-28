@@ -238,10 +238,10 @@ class Tasks_variable:
         return current_time >= self.release_time
 
     def is_obsolete(self, current_time=0):
-        if (not self.is_pickedup) and (current_time > self.ddl_pick *1.5 ):
+        if (not self.is_pickedup) and (current_time > self.ddl_pick * 4.2):
             return 1
         # if picked up but dropoff deadline passed and still not dropped
-        if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff *1.5):
+        if self.is_pickedup and (not self.is_droppedoff) and (current_time > self.ddl_dropoff *1):
             return 1
         return 0
         # if self.ddl_pick > current_time and not self.is_pickedup:
@@ -265,7 +265,7 @@ class Tasks_variable:
         self.is_droppedoff = 0
         self.release_time = int(self.t_release)
         self.ddl_pick = self.release_time + int(self.idle_allowance_time)
-        self.ddl_dropoff = self.ddl_pick + int(self.idle_allowance_time)
+        self.ddl_dropoff = self.ddl_pick + int(self.estimatedTravelTime * 1.5)
         self.coordinate = np.array(self.pick_up_coord, dtype=np.float32).reshape(1, -1)
         # bookkeeping for one-time rewards / penalties
         self.picked_by = None                 # which robot picked it up
@@ -303,7 +303,7 @@ class Tasks_variable:
         ]
         return att
 class MultiTaskAllocationEnv(gym.Env):
-    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=20, feature_size=9, use_true_id=False, all_batches=False):
+    def __init__(self, agents_cont_coord_array, task_cont_coord_array, radius=20, feature_size=9, use_true_id=False, all_batches=False, reward_mode="new"):
         super(MultiTaskAllocationEnv, self).__init__()
         self.planner = Planner()
         self.robot_capacity = 2
@@ -313,6 +313,7 @@ class MultiTaskAllocationEnv(gym.Env):
         self.n_robots = len(self.agents_cont_coord_array)
         self.use_true_id = use_true_id
         self.current_traj = {i: [] for i in range(self.n_robots)}
+        self.reward_mode = reward_mode
         
         # Handle all_batches mode: flatten list of batches into single task array
         if all_batches and isinstance(task_cont_coord_array, list):
@@ -423,16 +424,20 @@ class MultiTaskAllocationEnv(gym.Env):
         # Update number of tasks and mapping
         self.n_tasks = len(self.tasks)
         self.taskid_to_task = {t.id: t for t in self.tasks}
+        # print(self.tasks_info, 'tasks info in reset tasks')
 
     def _init_attribute_matrix(self):
+        # print("[debug] Initializing attributes matrix with robots_info and tasks_info", self.tasks_info)
         self.attributes_matrix = np.row_stack((self.robots_info, self.tasks_info))
 
     def _get_observations(self, update_node_att=True):
         if update_node_att:
             # print(self.attributes_matrix.shape, 'attributes matrix shape before update in get observations')
             self.update_nodes_attr()
+            # print("[debug] Attributes Matrix in _get_observations after update_nodes_attr:", self.attributes_matrix)
             # print(f"Task IDs after update_shared_attribute_matrix: {self.attributes_matrix[:, 0]}")
         self.update_graph()
+        # print("[debug] attributes_matrix in _get_observationsafter update_graph", self.attributes_matrix)
         return self.list_ego_graphs, self.attributes_matrix
 
     def update_nodes_attr(self):
@@ -528,8 +533,44 @@ class MultiTaskAllocationEnv(gym.Env):
         self.list_ego_graphs, _, self.trueid_idx_mapping = get_edge_idx_graph(
             self.attributes_matrix, self.n_tasks, len(self.robots), self.radius, self.use_true_id
         )
-        # print(f"Ego Graphs before removals: {self.list_ego_graphs}")
 
+        # print("[DEBUG base_env] list_ego_graphs[0] sample:", self.list_ego_graphs.get(0, [])[:1])
+        # print("[DEBUG base_env] list_ego_graphs[1] sample:", self.list_ego_graphs.get(1, [])[:1])
+        # print("[DEBUG base_env] tasks_info true ids:", self.tasks_info[:,0].astype(int).tolist() if len(self.tasks_info) > 0 else [])
+        # print(f"Ego Graphs before removals: {self.list_ego_graphs}")
+        
+        # ---- DEBUG: ego graph structure (print only sometimes) ----
+        # if not hasattr(self, "_debug_ego_prints"):
+        #     self._debug_ego_prints = 0
+        # if self._debug_ego_prints < 3:  # print only first 3 calls
+        #     self._debug_ego_prints += 1
+        #     print("\n[DEBUG base_env] use_true_id =", self.use_true_id)
+        #     print("[DEBUG base_env] attributes_matrix shape:", self.attributes_matrix.shape)
+        #     print("[DEBUG base_env] first 10 true_ids in attributes_matrix[:,0]:",
+        #         self.attributes_matrix[:10, 0].astype(int).tolist())
+
+        #     keys = list(self.list_ego_graphs.keys())
+        #     print("[DEBUG base_env] ego_graph keys sample:", keys[:min(10, len(keys))])
+        #     # Show one robot ego list
+        #     if keys:
+        #         k0 = keys[0]
+        #         ego_list = self.list_ego_graphs.get(k0, [])
+        #         print(f"[DEBUG base_env] ego_list for key={k0}: blocks={len(ego_list)}")
+        #         if ego_list:
+        #             blk0 = np.asarray(ego_list[0])
+        #             print("[DEBUG base_env] first block shape:", blk0.shape)
+        #             print("[DEBUG base_env] first 5 edges of first block:", blk0[:5].tolist())
+
+        #     # mapping format check
+        #     m = self.trueid_idx_mapping
+        #     if isinstance(m, (list, tuple)) and len(m) == 2:
+        #         print("[DEBUG base_env] trueid_idx_mapping list lens:",
+        #             len(m[0]), len(m[1]),
+        #             "sample ids:", np.asarray(m[1])[:10].astype(int).tolist())
+        #     elif isinstance(m, dict):
+        #         print("[DEBUG base_env] trueid_idx_mapping is dict, size:", len(m))
+        #     else:
+        #         print("[DEBUG base_env] trueid_idx_mapping type:", type(m))
         # Remove edges for full-capacity robots
         full_capacity_robot_ids = [robot.robot_id for robot in full_capacity_robots]
         
@@ -748,7 +789,10 @@ class MultiTaskAllocationEnv(gym.Env):
         # -------------------------------------------------
         # 3. COMPUTE REWARD
         # -------------------------------------------------
-        reward, info_reward = self.reward(debug=True)
+        if self.reward_mode == "new":
+            reward, info_reward = self.reward(debug=True)
+        else:
+            reward, info_reward = self.rewardold(debug=True)
         # print(info_reward, 'reward info in step')
         # print(reward, 'reward in step')
         
@@ -766,7 +810,7 @@ class MultiTaskAllocationEnv(gym.Env):
         # 5. UPDATE OBSERVATIONS
         # -------------------------------------------------
         obs = self._get_observations(update_node_att=True)
-    
+        # print("[debug] obs in base env step:", obs)
         # -------------------------------------------------
         # 6. INCREMENT TIME AND RETURN
         # -------------------------------------------------
@@ -778,8 +822,10 @@ class MultiTaskAllocationEnv(gym.Env):
             "meaningful_decision_step": meaningful_decision_step,  
             "time_count": self.time_count,
             "available_tasks": len(available_tasks),  
-            "available_robots": sum(1 for r in self.robots if r.capacity < r.maxCapacity)  # 
+            "available_robots": sum(1 for r in self.robots if r.capacity < r.maxCapacity),
+            
         }
+        info_reward["reward_mode"] = self.reward_mode
         # print(info, 'info in step')
         # print('final_assignments_for_step', final_assignments_for_step)
         # print(f"Step {self.time_count} | Reward: {reward} | Terminated: {terminated} | is_obsolete: {is_obsolete}|| is_droppedoff: {is_droppedoff}||Truncated: {truncated} | Info: {info}")
@@ -871,7 +917,124 @@ class MultiTaskAllocationEnv(gym.Env):
 
     # (4) Replace your reward() with the following function
     # In environment.py, modify the reward function:
+    #new reward closer to Klavdiia's implementation
+
     def reward(self, debug: bool = True):
+        """
+        Colleague-like reward = weighted sum of interpretable components per robot.
+
+        Terms (per robot):
+        - completion: +W_COMPLETION for each dropoff event (one-time)
+        - capacity:   +W_CAPACITY * current capacity (dense shaping)
+        - step:       small negative per step (global-scaled)
+        - wait_at_pickups: negative proportional to waiting time of assigned-not-picked tasks
+        - missed_deadline/abandoned: penalty when task becomes obsolete (one-time)
+        - nonserved/backlog: penalty for released & feasible tasks that remain unassigned
+
+        Notes:
+        - Uses task flags already in your env (picked_by, delivered_by, assigned_to, is_assigned, is_pickedup, etc.)
+        - Uses simple waiting-time proxy: (now - release_time) for tasks not yet picked up.
+        """
+        n_robots = max(1, len(self.robots))
+        rewards = {rid: 0.0 for rid in range(n_robots)}
+
+        # ---------------- weights (start here, tune later) ----------------
+        W_COMPLETION = 10.0          # like colleague's comp * 40
+        W_CAPACITY = 2.0             # like colleague's cap * 2
+        W_STEP = -0.1                # IMPORTANT: apply as GLOBAL then divide (see below)
+        W_WAIT = -0.01               # penalty per second of waiting (tune)
+        W_ABANDONED = -10.0          # like colleague's abandoned * -10
+        W_MISSED_DROPOFF = -10.0     # picked but missed dropoff deadline
+        W_BACKLOG = -0.02            # per released-unassigned task per step (tune)
+
+        # ---------------- bookkeeping / debug counters ----------------
+        completion_events = 0
+        abandoned_events = 0
+        missed_dropoff_events = 0
+
+        # ---------------- 1) step penalty (global-scaled) ----------------
+        # Your previous version did -0.1 per robot per step => total -0.1*n_robots.
+        # Colleague's step penalty is effectively small; so we apply a GLOBAL penalty and split.
+        step_each = (W_STEP / n_robots) if n_robots > 0 else 0.0
+        for rid in range(n_robots):
+            rewards[rid] += step_each
+
+        # ---------------- 2) capacity shaping (dense) ----------------
+        for rid, robot in enumerate(self.robots):
+            rewards[rid] += W_CAPACITY * float(max(0, robot.capacity))
+
+        # ---------------- 3) completion reward (one-time on dropoff event) ----------------
+        for task in self.tasks:
+            if task.is_droppedoff and (not getattr(task, "delivered_reward_given", False)):
+                did = getattr(task, "delivered_by", None)
+                if did is not None and 0 <= int(did) < n_robots:
+                    rewards[int(did)] += W_COMPLETION
+                    completion_events += 1
+                task.delivered_reward_given = True
+
+        # ---------------- 4) waiting penalty at pickups (assigned but not picked) ----------------
+        # Penalize the robot that is holding responsibility for pickup.
+        # This encourages choosing tasks you can actually reach soon.
+        now = int(self.time_count)
+        for task in self.tasks:
+            if task.release_time <= now and task.is_assigned and (not task.is_pickedup) and (not task.is_obsolete(now)):
+                rid = getattr(task, "assigned_to", None)
+                if rid is None:
+                    continue
+                if 0 <= int(rid) < n_robots:
+                    wait_t = max(0, now - int(task.release_time))
+                    rewards[int(rid)] += W_WAIT * float(wait_t)
+
+        # ---------------- 5) deadline miss / abandoned penalty (one-time) ----------------
+        # Use your is_obsolete() but separate the two cases for debugging/weighting:
+        # - not picked up => abandoned
+        # - picked up but not dropped => missed dropoff
+        for task in self.tasks:
+            if task.is_obsolete(now) and (not getattr(task, "obsolete_penalty_given", False)):
+                rid = getattr(task, "assigned_to", None)
+                if rid is None:
+                    rid = getattr(task, "picked_by", None)
+
+                if rid is not None and 0 <= int(rid) < n_robots:
+                    if (not task.is_pickedup):
+                        rewards[int(rid)] += W_ABANDONED
+                        abandoned_events += 1
+                    elif (task.is_pickedup and not task.is_droppedoff):
+                        rewards[int(rid)] += W_MISSED_DROPOFF
+                        missed_dropoff_events += 1
+
+                task.obsolete_penalty_given = True
+
+        # ---------------- 6) backlog / nonserved (dense global) ----------------
+        # Penalize unassigned released tasks that are not obsolete yet (system-level pressure).
+        # Split across robots so scale doesn't explode with fleet size.
+        backlog_tasks = 0
+        for task in self.tasks:
+            if task.release_time <= now and (not task.is_obsolete(now)) and (not task.is_assigned) and (not task.is_pickedup):
+                backlog_tasks += 1
+
+        if backlog_tasks > 0:
+            backlog_each = (W_BACKLOG * float(backlog_tasks)) / n_robots
+            for rid in range(n_robots):
+                rewards[rid] += backlog_each
+
+        if debug:
+            info = {
+                "sum_rewards": float(sum(rewards.values())),
+                "terms": {
+                    # system-level summaries (you can also log per-robot if you want)
+                    "completion_events": int(completion_events),
+                    "abandoned_events": int(abandoned_events),
+                    "missed_dropoff_events": int(missed_dropoff_events),
+                    "backlog_tasks": int(backlog_tasks),
+                },
+                "robot_capacities": [int(r.capacity) for r in self.robots],
+            }
+            return rewards, info
+
+        return rewards
+
+    def rewardmain(self, debug: bool = True):
         """
         Colleague-style reward (event-based + time pressure):
         - pickup reward: paid once when task becomes picked up
@@ -882,10 +1045,10 @@ class MultiTaskAllocationEnv(gym.Env):
         n_robots = max(1, len(self.robots))
 
         # Tunable constants (start here, then tune)
-        R_PICKUP = 1.0
-        R_DELIVERY = 5.0
+        R_PICKUP = 0.0
+        R_DELIVERY = 10.0
         P_OBSOLETE = -5.0
-        STEP_PENALTY = -0.01  # per robot per step (small)
+        STEP_PENALTY = -0.1  # per robot per step (small)
 
         rewards = {rid: 0.0 for rid in range(n_robots)}
         pickup_count = 0
