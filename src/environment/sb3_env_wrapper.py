@@ -707,10 +707,26 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import torch
+from src.utils.feature_fns import make_feature_fn, compute_feature_dim
+from src.utils.graph_builders import build_padded_ego_batch
 
 
 class WarehouseEnvSB3Final(gym.Env):
-    def __init__(self, base_env, assignment_interval=50, k_max=5, ego_max_nodes=None, ego_max_edges=None):
+    def __init__(
+        self,
+        base_env,
+        assignment_interval=50,
+        k_max=5,
+        ego_max_nodes=None,
+        ego_max_edges=None,
+        feature_fn=None,
+        two_hop: bool = False,
+        two_hop_directed: bool = False,
+        normalize_features: bool = False,
+        use_edge_rt: bool = False,
+        edge_feat_dim: int = 0,
+        edge_features=None,
+    ):
         super().__init__()
         self.base_env = base_env
         self.assignment_interval = int(assignment_interval)
@@ -718,6 +734,25 @@ class WarehouseEnvSB3Final(gym.Env):
         self.k_max = int(k_max)
         self.noop_index = self.k_max
         self.n_robots = int(base_env.n_robots)
+        self.two_hop = bool(two_hop)
+        self.two_hop_directed = bool(two_hop_directed)
+        self.normalize_features = bool(normalize_features)
+        self.use_edge_rt = bool(use_edge_rt)
+        self.edge_feat_dim = int(edge_feat_dim)
+        self.edge_features = list(edge_features or [])
+        self.feature_dim = int(
+            getattr(
+                base_env,
+                "feature_size",
+                compute_feature_dim(use_edge_rt=self.use_edge_rt),
+            )
+        )
+        self.feature_fn = feature_fn or make_feature_fn(
+            base_env,
+            normalize_features=self.normalize_features,
+            use_edge_rt=self.use_edge_rt,
+            edge_features=self.edge_features,
+        )
 
         # Count total tasks across batches (for legacy global sizing; not used for ego sizing)
         total_tasks = 0
@@ -751,10 +786,10 @@ class WarehouseEnvSB3Final(gym.Env):
         print(f"  Action: MultiDiscrete([K+1]*R) with K={self.k_max} and NOOP={self.noop_index}")
         print(f"  Ego obs: node_features [R,{self.ego_max_nodes},F], edge_index [R,2,{self.ego_max_edges}]")
 
-        F = int(base_env.feature_size)
+        F = int(self.feature_dim)
 
         # Observation space (ego-graph per robot)
-        self.observation_space = spaces.Dict({
+        obs_space = {
             "node_features": spaces.Box(
                 low=-np.inf, high=np.inf,
                 shape=(self.n_robots, self.ego_max_nodes, F),
@@ -775,21 +810,26 @@ class WarehouseEnvSB3Final(gym.Env):
                 shape=(self.n_robots, 1),
                 dtype=np.int64,
             ),
-
             # per-robot action mask (K+1 includes NOOP)
             "action_mask": spaces.Box(
                 low=0.0, high=1.0,
                 shape=(self.n_robots, self.k_max + 1),
                 dtype=np.float32,
             ),
-
             # LOCAL candidate indices (0..N_ego_max-1) or -1
             "cand_node_idx": spaces.Box(
                 low=-1, high=self.ego_max_nodes - 1,
                 shape=(self.n_robots, self.k_max),
                 dtype=np.int64,
             ),
-        })
+        }
+        if self.edge_feat_dim > 0:
+            obs_space["edge_attr"] = spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(self.n_robots, self.ego_max_edges, self.edge_feat_dim),
+                dtype=np.float32,
+            )
+        self.observation_space = spaces.Dict(obs_space)
 
         # Action: one discrete per robot
         self.action_space = spaces.MultiDiscrete([self.k_max + 1] * self.n_robots)
@@ -874,62 +914,53 @@ class WarehouseEnvSB3Final(gym.Env):
         return cand
     #this version fix the issue with task id to task object mapping and also filter the candidate by release time, assigned/obsolete status, and robot capacity
     def _build_candidates(self):
-        """
-        Build up to k_max candidate task IDs per robot from the current observed task rows
-        in the shared attribute matrix, so candidate IDs always match the current observation.
+        _, _, cand_task_ids = self._collect_candidates()
+        return cand_task_ids
 
-        This avoids mismatch between:
-        - live env tasks (IDs like 10000+)
-        - attribute_matrix tasks (IDs currently present in the graph)
-        """
-        cand = [[None] * self.k_max for _ in range(self.n_robots)]
+    def _get_tasks_and_candidates(self):
+        if hasattr(self.base_env, "get_tasks_and_candidate_lists"):
+            return self.base_env.get_tasks_and_candidate_lists(self.k_max)
 
-        # We need the current attribute matrix to define the candidate pool.
-        # If not available yet, return empty candidates.
-        if not hasattr(self, "_latest_attribute_matrix") or self._latest_attribute_matrix is None:
-            return cand
+        tasks = []
+        if hasattr(self.base_env, "get_available_tasks"):
+            tasks = list(self.base_env.get_available_tasks())
+        else:
+            task_ids = list(self.base_env.get_available_task_ids())
+            task_map = getattr(self.base_env, "taskid_to_task", {})
+            tasks = [task_map[tid] for tid in task_ids if tid in task_map]
 
-        attr = np.asarray(self._latest_attribute_matrix, dtype=np.float32)
-        # print("[DEBUG _build_candidates] attr", attr)
-        # print("[DEBUG _build_candidates] self._latest_attribute_matrix", self._latest_attribute_matrix)
-        # print("[DEBUG _build_candidates] attr shape:", attr.ndim, attr.shape)
-        if attr.ndim != 2 or attr.shape[0] <= self.n_robots:
-            return cand
+        cand_lists = [[] for _ in range(self.n_robots)]
+        if not tasks:
+            return tasks, cand_lists
 
-        # Current task rows are rows after the robot rows
-        task_rows = np.arange(self.n_robots, attr.shape[0], dtype=np.int64)
-        task_ids = attr[task_rows, 0].astype(int)
-        # print("[DEBUG TASK DATA]",task_rows)
-        # print("[DEBUG _build_candidates] task_ids from attr:", task_ids[:20])
-        task_coords = attr[task_rows, 1:3].astype(np.float32)
-
-        # Filter out invalid/empty rows if needed
-        valid_mask = np.isfinite(task_coords).all(axis=1)
-        task_rows = task_rows[valid_mask]
-        task_ids = task_ids[valid_mask]
-        task_coords = task_coords[valid_mask]
-
-        if len(task_rows) == 0:
-            return cand
-
-        for r in range(self.n_robots):
-            robot = self.base_env.robots[r]
+        task_coords = np.asarray([t.pick_up_coord[:2] for t in tasks], dtype=np.float32)
+        for r, robot in enumerate(self.base_env.robots):
             if robot.capacity >= robot.maxCapacity:
                 continue
-
             rpos = np.asarray(robot.coordinate[:2], dtype=np.float32)
-            scored = []
+            dists = np.linalg.norm(task_coords - rpos, axis=1)
+            if hasattr(self.base_env, "radius") and float(self.base_env.radius) > 0:
+                valid_idx = np.where(dists <= float(self.base_env.radius))[0]
+            else:
+                valid_idx = np.arange(len(tasks))
 
-            for tid, tpos in zip(task_ids, task_coords):
-                d = float(np.linalg.norm(rpos - tpos[:2]))
-                scored.append((d, int(tid)))
+            if len(valid_idx) == 0:
+                continue
 
-            scored.sort(key=lambda x: x[0])
+            ordered = valid_idx[np.argsort(dists[valid_idx])]
+            cand_lists[r] = ordered[: int(self.k_max)].astype(int).tolist()
 
-            for k, (_, tid) in enumerate(scored[: self.k_max]):
-                cand[r][k] = int(tid)
-        # print("[DEBUG _build_candidates with wrong task id] cand:", cand)
-        return cand
+        return tasks, cand_lists
+
+    def _collect_candidates(self):
+        tasks, cand_lists = self._get_tasks_and_candidates()
+        cand_task_ids = [[None] * self.k_max for _ in range(self.n_robots)]
+        for r, cand in enumerate(cand_lists):
+            for slot, task_idx in enumerate(cand[: self.k_max]):
+                if 0 <= task_idx < len(tasks):
+                    tid = getattr(tasks[task_idx], "id", None)
+                    cand_task_ids[r][slot] = int(tid) if tid is not None else None
+        return tasks, cand_lists, cand_task_ids
     def _build_candidatesworking_butbuggi(self):
         """
         Build up to k_max candidate task IDs per robot, ordered by smallest distance to pickup.
@@ -1034,34 +1065,34 @@ class WarehouseEnvSB3Final(gym.Env):
             self.last_episode_completed = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
             self.last_episode_obsolete = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
 
-        obs, info = self.base_env.reset()
-        # print("[DEBUG reset] obs after calling baseenv.reset:", obs)
+        _obs, info = self.base_env.reset()
         self.step_count = 0
         self.episode_count += 1
 
-        self._last_cand_task_ids = self._build_candidates()
+        obs = self._build_obs()
 
         if not isinstance(info, dict):
             info = {}
         info["episode_completed"] = self.last_episode_completed
         info["episode_obsolete"] = self.last_episode_obsolete
         info["cand_task_ids"] = self._last_cand_task_ids
-        info["action_mask"] = self._action_mask_matrix()
+        info["action_mask"] = obs["action_mask"]
 
-        return self._convert_observation(obs), info
+        return obs, info
 
     def step(self, action):
         self.step_count += 1
         is_decision_step = ((self.step_count - 1) % self.assignment_interval == 0)
 
         if is_decision_step:
-            self._last_cand_task_ids = self._build_candidates()
+            _, _, cand_task_ids = self._collect_candidates()
+            self._last_cand_task_ids = cand_task_ids
             assignments = self._decode_action_vec(action)
             # print(assignments,'<- decoded assignments from action_vec:', action)
         else:
             assignments = None
 
-        obs, reward, done, truncated, info_reward, info = self.base_env.step(
+        _obs, reward, done, truncated, info_reward, info = self.base_env.step(
             assignments,
             assignment_interval=self.assignment_interval
         )
@@ -1077,15 +1108,16 @@ class WarehouseEnvSB3Final(gym.Env):
             for k, v in info_reward.items():
                 info[f"rew/{k}"] = v
 
+        obs = self._build_obs()
         info["cand_task_ids"] = self._last_cand_task_ids
-        info["action_mask"] = self._action_mask_matrix()
+        info["action_mask"] = obs["action_mask"]
         info["decoded_assignments"] = assignments
 
         if done or truncated:
             info["episode_completed"] = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
             info["episode_obsolete"] = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
 
-        return self._convert_observation(obs), reward, done, truncated, info
+        return obs, reward, done, truncated, info
     #Helper function to get mapping from true_id to row index in attribute_matrix for current observation
     def _build_id_to_row_from_matrix(self, attribute_matrix):
         attribute_matrix = np.asarray(attribute_matrix)
@@ -1093,124 +1125,51 @@ class WarehouseEnvSB3Final(gym.Env):
             return {}
         return {int(tid): int(i) for i, tid in enumerate(attribute_matrix[:, 0])}
 
-    def _convert_observation(self, obs):
-        """
-        Convert base_env obs=(ego_graphs, attribute_matrix) into per-robot ego observations.
+    def _build_obs(self):
+        tasks, cand_lists, _ = self._collect_candidates()
+        obs, cand_task_ids = build_padded_ego_batch(
+            robots=list(self.base_env.robots),
+            tasks=list(tasks),
+            candidate_lists=cand_lists,
+            N_max=self.ego_max_nodes,
+            E_max=self.ego_max_edges,
+            K_max=self.k_max,
+            F=self.feature_dim,
+            G=0,
+            feature_fn=self.feature_fn,
+            two_hop=self.two_hop,
+            two_hop_directed=self.two_hop_directed,
+            normalize_features=self.normalize_features,
+            vicinity_m=float(getattr(self.base_env, "radius", 0.0)),
+            use_edge_rt=self.use_edge_rt,
+            edge_feat_dim=self.edge_feat_dim,
+            edge_features=self.edge_features,
+        )
+        self._last_cand_task_ids = cand_task_ids
 
-        For use_true_id=False:
-        - ego_graphs keys are robot row indices (0..R-1)
-        - edge endpoints are row indices into attribute_matrix
-        - attribute_matrix[:, 0] contains true IDs, used only for candidate mapping
-        """
-        ego_graphs, attribute_matrix = obs
-        # print("[DEBUG _convert_observation] attribute_matrix:", attribute_matrix)
-        attribute_matrix = np.asarray(attribute_matrix, dtype=np.float32)
-        N_global, F = attribute_matrix.shape
-        self._latest_attribute_matrix = attribute_matrix.copy()
-        R = self.n_robots
-        K = self.k_max
+        node_mask = obs["node_mask"]
+        edge_mask = obs["edge_mask"]
+        num_nodes = node_mask.sum(axis=1, keepdims=True).astype(np.int64)
+        num_edges = edge_mask.sum(axis=1, keepdims=True).astype(np.int64)
 
-        # padded outputs
-        node_features = np.zeros((R, self.ego_max_nodes, F), dtype=np.float32)
-        edge_index = np.zeros((R, 2, self.ego_max_edges), dtype=np.int64)
-        num_nodes = np.zeros((R, 1), dtype=np.int64)
-        num_edges = np.zeros((R, 1), dtype=np.int64)
+        action_mask = np.zeros((self.n_robots, self.k_max + 1), dtype=np.float32)
+        action_mask[:, :-1] = obs["cand_mask"].astype(np.float32)
+        action_mask[:, self.noop_index] = 1.0
 
-        # Build task true_id -> row mapping from current matrix
-        id_to_row = self._build_id_to_row_from_matrix(attribute_matrix)
-
-        # candidate global rows from task ids
-        cand_global = -np.ones((R, K), dtype=np.int64)
-        for r in range(R):
-            for k in range(K):
-                tid = self._last_cand_task_ids[r][k]
-                if tid is None:
-                    continue
-                cand_global[r, k] = int(id_to_row.get(int(tid), -1))
-
-        cand_local = -np.ones((R, K), dtype=np.int64)
-
-        for rid in range(R):
-            # use row-index keys directly
-            ego_list = ego_graphs.get(rid, [])
-
-            if ego_list is None or len(ego_list) == 0:
-                g_nodes = [rid] if 0 <= rid < N_global else []
-                g2l = {int(g): i for i, g in enumerate(g_nodes)}
-
-                n_i = min(len(g_nodes), self.ego_max_nodes)
-                if n_i > 0:
-                    node_features[rid, :n_i, :] = attribute_matrix[np.asarray(g_nodes[:n_i], dtype=np.int64)]
-                num_nodes[rid, 0] = n_i
-                num_edges[rid, 0] = 0
-
-                for k in range(K):
-                    g = int(cand_global[rid, k])
-                    if g >= 0 and g in g2l and g2l[g] < self.ego_max_nodes:
-                        cand_local[rid, k] = int(g2l[g])
-                continue
-
-            # ego_list is list of arrays [M,2] of row indices
-            edges_g = np.concatenate(ego_list, axis=0).astype(np.int64).reshape(-1, 2)
-
-            # nodes present in ego edges
-            g_nodes = np.unique(edges_g.reshape(-1)).tolist()
-
-            # ensure robot node is first
-            if rid in g_nodes:
-                g_nodes.remove(rid)
-            g_nodes = [rid] + g_nodes
-
-            if len(g_nodes) > self.ego_max_nodes:
-                g_nodes = g_nodes[: self.ego_max_nodes]
-
-            g2l = {int(g): int(i) for i, g in enumerate(g_nodes)}
-
-            n_i = len(g_nodes)
-            if n_i > 0:
-                node_features[rid, :n_i, :] = attribute_matrix[np.asarray(g_nodes, dtype=np.int64)]
-            num_nodes[rid, 0] = n_i
-
-            # remap edges to local indices
-            src_g = edges_g[:, 0]
-            dst_g = edges_g[:, 1]
-            keep = np.array([(int(s) in g2l and int(d) in g2l) for s, d in zip(src_g, dst_g)], dtype=bool)
-            edges_kept = edges_g[keep]
-
-            if edges_kept.size > 0:
-                src_l = np.array([g2l[int(s)] for s in edges_kept[:, 0]], dtype=np.int64)
-                dst_l = np.array([g2l[int(d)] for d in edges_kept[:, 1]], dtype=np.int64)
-                edges_l = np.stack([src_l, dst_l], axis=0)
-            else:
-                edges_l = np.zeros((2, 0), dtype=np.int64)
-
-            e_i = min(edges_l.shape[1], self.ego_max_edges)
-            if e_i > 0:
-                edge_index[rid, :, :e_i] = edges_l[:, :e_i]
-            num_edges[rid, 0] = e_i
-
-            # candidates: global row -> local row
-            for k in range(K):
-                g = int(cand_global[rid, k])
-                if g >= 0 and g in g2l:
-                    cand_local[rid, k] = int(g2l[g])
-        if not hasattr(self, "_debug_wrap2"):
-            self._debug_wrap2 = 0
-        if self._debug_wrap2 < 3:
-            self._debug_wrap2 += 1
-            # print("[DEBUG wrapper2] rid0 cand_global:", cand_global[0].tolist())
-            # print("[DEBUG wrapper2] rid0 ego_list len:", len(ego_graphs.get(0, [])))
-            # print("[DEBUG wrapper2] rid0 g_nodes:", g_nodes[:15] if len(ego_graphs.get(0, [])) > 0 else [])
-        action_mask = self._action_mask_matrix().astype(np.float32)
-
-        return {
-            "node_features": node_features,
-            "edge_index": edge_index,
+        out = {
+            "node_features": obs["x"],
+            "edge_index": obs["edge_index"],
             "num_nodes": num_nodes,
             "num_edges": num_edges,
             "action_mask": action_mask,
-            "cand_node_idx": cand_local,
+            "cand_node_idx": obs["cand_idx"],
         }
+        if "edge_attr" in obs:
+            out["edge_attr"] = obs["edge_attr"]
+        return out
+
+    def _convert_observation(self, obs):
+        return self._build_obs()
 #     def _convert_observation(self, obs):
 #         """
 #         Convert base_env obs=(ego_graphs, attribute_matrix) into per-robot ego observations.

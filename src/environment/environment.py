@@ -654,6 +654,47 @@ class MultiTaskAllocationEnv(gym.Env):
             if t.is_active and not t.is_assigned and t.release_time <= self.time_count and t.is_obsolete(self.time_count) == 0
         ]
 
+    def get_available_tasks(self):
+        """Return available task objects (released, active, unassigned, non-obsolete)."""
+        return [
+            t for t in self.tasks
+            if t.is_active
+            and not t.is_assigned
+            and t.release_time <= self.time_count
+            and t.is_obsolete(self.time_count) == 0
+        ]
+
+    def get_tasks_and_candidate_lists(self, k_max: int):
+        """
+        Return available tasks and per-robot candidate lists (indices into tasks).
+
+        Candidates are filtered by vicinity (self.radius) and ranked by pickup distance.
+        """
+        tasks = self.get_available_tasks()
+        cand_lists = [[] for _ in range(self.n_robots)]
+        if not tasks:
+            return tasks, cand_lists
+
+        task_coords = np.asarray([t.pick_up_coord[:2] for t in tasks], dtype=np.float32)
+        for r, robot in enumerate(self.robots):
+            if robot.capacity >= robot.maxCapacity:
+                continue
+            rpos = np.asarray(robot.coordinate[:2], dtype=np.float32)
+            dists = np.linalg.norm(task_coords - rpos, axis=1)
+
+            if self.radius is not None and float(self.radius) > 0:
+                valid_idx = np.where(dists <= float(self.radius))[0]
+            else:
+                valid_idx = np.arange(len(tasks))
+
+            if len(valid_idx) == 0:
+                continue
+
+            ordered = valid_idx[np.argsort(dists[valid_idx])]
+            cand_lists[r] = ordered[: int(k_max)].astype(int).tolist()
+
+        return tasks, cand_lists
+
     def _plan_robot_trajectory(self, robot):
         """
         Build a full trajectory for `robot` by planning from the robot's current position
