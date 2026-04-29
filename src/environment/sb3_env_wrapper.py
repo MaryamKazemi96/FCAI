@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-
-=======
-
 # """
 # SB3 wrapper (colleague-style masking):
 # - MultiDiscrete per-robot actions
@@ -692,7 +688,6 @@
 
 # ------------------------this version replace global graph handeling with ego graph----------------
 # ---------------------------------------------------------------------------------------------
->>>>>>> Fix_EgoGraph_handeling
 """
 SB3 wrapper with per-robot ego-graph observations (colleague-style).
 
@@ -1070,12 +1065,7 @@ class WarehouseEnvSB3Final(gym.Env):
             assignments,
             assignment_interval=self.assignment_interval
         )
-<<<<<<< HEAD
-        # print(f"Step {self.step_count}: reward={reward}, done={done}, truncated={truncated}, info_reward={info_reward}")
-
-=======
         # print("[DEBUG step] obs:", obs)
->>>>>>> Fix_EgoGraph_handeling
         if isinstance(reward, dict):
             reward = sum(reward.values())
 
@@ -1092,19 +1082,8 @@ class WarehouseEnvSB3Final(gym.Env):
         info["decoded_assignments"] = assignments
 
         if done or truncated:
-<<<<<<< HEAD
-            info['episode_completed'] = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
-            info['episode_obsolete'] = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
-            # info["cand_task_ids"] = self._last_cand_task_ids
-            # info["action_mask"] = self._action_mask_matrix()
-            # info["decoded_assignments"] = assignments  # for debugging
-        info["cand_task_ids"] = self._last_cand_task_ids
-        info["action_mask"] = self._action_mask_matrix()
-        info["decoded_assignments"] = assignments
-=======
             info["episode_completed"] = sum(1 for t in self.base_env.tasks if t.is_droppedoff)
             info["episode_obsolete"] = sum(1 for t in self.base_env.tasks if t.is_obsolete(self.base_env.time_count))
->>>>>>> Fix_EgoGraph_handeling
 
         return self._convert_observation(obs), reward, done, truncated, info
     #Helper function to get mapping from true_id to row index in attribute_matrix for current observation
@@ -1225,15 +1204,6 @@ class WarehouseEnvSB3Final(gym.Env):
         action_mask = self._action_mask_matrix().astype(np.float32)
 
         return {
-<<<<<<< HEAD
-            "node_features": padded_features,
-            "edge_index": padded_edges,
-            "num_nodes": np.array([num_nodes], dtype=np.int64),
-            "num_edges": np.array([num_edges], dtype=np.int64),
-            "action_mask": action_mask.astype(np.float32),
-            "cand_node_idx": cand_node_idx,  
-        }
-=======
             "node_features": node_features,
             "edge_index": edge_index,
             "num_nodes": num_nodes,
@@ -1346,4 +1316,3 @@ class WarehouseEnvSB3Final(gym.Env):
 
 # -------------------------------------------------------------------------------
 # ----------------------------------------End of this version-------------------
->>>>>>> Fix_EgoGraph_handeling

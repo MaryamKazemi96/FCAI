@@ -45,15 +45,9 @@ ppo:
 
 # Training
 training:
-<<<<<<< HEAD
-  total_timesteps: 20000  # Total environment steps
-  save_freq: 5000  # Save model every N steps
-  eval_freq: 5000  # Evaluate every N steps
-=======
-  total_timesteps: 50000  # Total environment steps
-  save_freq: 10000  # Save model every N steps
-  eval_freq: 10000  # Evaluate every N steps
->>>>>>> Fix_EgoGraph_handeling
+  total_timesteps: 10000  # Total environment steps
+  save_freq: 50000  # Save model every N steps
+  eval_freq: 50000  # Evaluate every N steps
   eval_episodes: 10
   log_interval: 1
   checkpoint_dir: "checkpoints_ppo"
