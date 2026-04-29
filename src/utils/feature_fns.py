@@ -35,6 +35,8 @@ def compute_feature_dim(
     robot_commitment: str = "none",
     route_slots_k: int = 2,
 ) -> int:
+    # robot_commitment/route_slots_k only affect edge features, not node features
+    _ = robot_commitment, route_slots_k
     dim = 9
     if use_xy_pickup and not use_edge_rt:
         dim += 2
@@ -156,23 +158,26 @@ def make_feature_fn(
         y = float(coord[1]) if len(coord) > 1 else 0.0
         return x, y
 
+    base_dim = feature_dim - (2 if use_node_type else 0) - (1 if use_ego_robot else 0)
+    node_type_offset = base_dim if use_node_type else None
+    ego_offset = base_dim + (2 if use_node_type else 0) if use_ego_robot else None
+
     def _append_node_type(out: np.ndarray, node_type: str) -> None:
         if not use_node_type:
             return
-        if use_ego_robot:
-            if out.shape[0] >= 3:
-                out[-3] = 1.0 if node_type == "robot" else 0.0
-                out[-2] = 1.0 if node_type == "task" else 0.0
-        else:
-            if out.shape[0] >= 2:
-                out[-2] = 1.0 if node_type == "robot" else 0.0
-                out[-1] = 1.0 if node_type == "task" else 0.0
+        if node_type_offset is None:
+            return
+        if out.shape[0] >= node_type_offset + 2:
+            out[node_type_offset] = 1.0 if node_type == "robot" else 0.0
+            out[node_type_offset + 1] = 1.0 if node_type == "task" else 0.0
 
     def _append_ego_robot(out: np.ndarray, is_ego: bool) -> None:
         if not use_ego_robot:
             return
-        if out.shape[0] >= 1:
-            out[-1] = 1.0 if is_ego else 0.0
+        if ego_offset is None:
+            return
+        if out.shape[0] >= ego_offset + 1:
+            out[ego_offset] = 1.0 if is_ego else 0.0
 
     def _resolve_task(x: Any) -> Optional[Any]:
         if x is None:
@@ -227,7 +232,9 @@ def make_feature_fn(
         out = np.zeros((feature_dim,), dtype=np.float32)
         now = float(getattr(env, "time_count", 0.0))
 
-        if node_type in {"robot", "robot_ego", "robot_other"}:
+        if node_type == "robot":
+            node_type = "robot_ego"
+        if node_type in {"robot_ego", "robot_other"}:
             is_ego = node_type != "robot_other"
             rx, ry = _robot_xy(obj_a)
             if normalize_features:
