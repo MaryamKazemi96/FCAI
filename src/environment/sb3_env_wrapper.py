@@ -1168,8 +1168,6 @@ class WarehouseEnvSB3Final(gym.Env):
             out["edge_attr"] = obs["edge_attr"]
         return out
 
-    def _convert_observation(self, obs):
-        return self._build_obs()
 #     def _convert_observation(self, obs):
 #         """
 #         Convert base_env obs=(ego_graphs, attribute_matrix) into per-robot ego observations.

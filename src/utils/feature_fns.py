@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Any, Optional, Tuple, List
+from typing import Any, Optional, Tuple, List, Dict
 
 BASE_ROBOT_FEATURE_NAMES: List[str] = [
     "robot_loc_x",
@@ -52,7 +52,7 @@ def get_feature_names(
     use_ego_robot: bool = False,
     robot_commitment: str = "none",
     route_slots_k: int = 2,
-) -> tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str]]:
     robot_names = list(BASE_ROBOT_FEATURE_NAMES)
     task_names = list(BASE_TASK_FEATURE_NAMES)
 
@@ -201,7 +201,7 @@ def make_feature_fn(
         if normalize_features:
             eta = float(np.clip(eta / travel_scale, 0.0, 1.0))
 
-        slot_values: dict[str, float] = {}
+        slot_values: Dict[str, float] = {}
         if robot_commitment == "route_slots":
             for s_idx in range(int(route_slots_k)):
                 slot_values[f"slot{s_idx}_pu_dx"] = 0.0
