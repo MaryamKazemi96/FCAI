@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Any, Optional, Tuple, List, cast
+from typing import Any, Optional, Tuple, List
 
 BASE_ROBOT_FEATURE_NAMES: List[str] = [
     "robot_loc_x",
